@@ -565,6 +565,27 @@
   .cmdk-hint { padding: 10px 16px; border-top: 1px solid var(--hairline); font-size: 11px; color: var(--muted); }
   .cmdk-hint kbd { font-family: var(--font-mono); background: var(--wash); border-radius: 4px; padding: 1px 5px; }
 
+  .emoji-select { display: flex; gap: 6px; }
+  .emoji-select button { flex: 1; background: var(--wash); color: var(--muted); font-size: 18px; font-weight: 700; padding: 10px 0; border-radius: 8px; }
+  .emoji-select button:hover { background: var(--accent-wash); }
+  .emoji-select button.active { background: var(--accent); color: #fff; }
+
+  .weather-now { display: flex; align-items: center; gap: 18px; padding: 8px 0 4px; }
+  .weather-icon { font-size: 46px; line-height: 1; }
+  .weather-temp { font-family: var(--font-mono); font-size: 42px; font-weight: 800; line-height: 1; }
+  .weather-desc { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .weather-range { font-size: 12px; color: var(--muted); font-family: var(--font-mono); margin-top: 8px; }
+  .weather-fallback a { color: var(--accent); }
+  .weather-updated { font-size: 11px; color: var(--icon-muted); margin-top: 10px; }
+
+  .guide-card { padding: 12px 0; border-bottom: 1px solid var(--hairline); }
+  .guide-card:last-child { border-bottom: none; }
+  .guide-card h3 { margin: 0 0 4px; font-size: 14px; }
+  .guide-card p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.5; }
+
+  .external-link { display: flex; justify-content: space-between; align-items: center; width: 100%; color: inherit; text-decoration: none; }
+  .external-link:hover .row-name { color: var(--accent); }
+
   @media (max-width: 720px) {
     .app { flex-direction: column; }
     .sidebar {
@@ -623,8 +644,13 @@
         <button class="nav-btn" data-panel="todo"><span class="nav-icon">✅</span><span>To-Do</span></button>
         <button class="nav-btn" data-panel="schedule"><span class="nav-icon">📅</span><span>Schedule</span></button>
         <button class="nav-btn" data-panel="gpa"><span class="nav-icon">🎯</span><span>GPA</span></button>
+        <button class="nav-btn" data-panel="assignments"><span class="nav-icon">📝</span><span>Assignments</span></button>
         <button class="nav-btn" data-panel="timer"><span class="nav-icon">⏱️</span><span>Timer</span></button>
         <button class="nav-btn" data-panel="habits"><span class="nav-icon">🔥</span><span>Habits</span></button>
+        <button class="nav-btn" data-panel="wellness"><span class="nav-icon">💚</span><span>Wellness</span></button>
+        <button class="nav-btn" data-panel="contacts"><span class="nav-icon">👤</span><span>Contacts</span></button>
+        <button class="nav-btn" data-panel="guide"><span class="nav-icon">🧭</span><span>Guide</span></button>
+        <button class="nav-btn" data-panel="weather"><span class="nav-icon">🌤️</span><span>Weather</span></button>
       </div>
       <div class="sidebar-footer">
         <button class="theme-toggle" id="theme-toggle-btn" title="Toggle dark mode" aria-label="Toggle dark mode">🌙</button>
@@ -870,6 +896,121 @@
           <div class="card">
             <h2 class="section-title">Last 10 Weeks</h2>
             <div class="heatmap" id="habit-heatmap"></div>
+          </div>
+        </section>
+
+        <!-- ASSIGNMENTS -->
+        <section id="panel-assignments" class="panel" hidden>
+          <div class="card">
+            <h1 class="page-title">Assignments</h1>
+            <p class="page-sub">Track what's due and watch your grade in each class update as you go.</p>
+
+            <div class="field-row">
+              <input id="asg-title" type="text" placeholder="Assignment name" class="field-full">
+              <select id="asg-course" class="field-full"></select>
+              <input id="asg-due" type="date" class="field-half">
+              <input id="asg-points" type="number" placeholder="Points possible" min="0" step="0.5" class="field-half">
+              <button id="asg-add-btn" class="field-full">Add Assignment</button>
+            </div>
+
+            <ul class="list" id="asg-list"></ul>
+          </div>
+        </section>
+
+        <!-- WELLNESS -->
+        <section id="panel-wellness" class="panel" hidden>
+          <div class="card">
+            <h1 class="page-title">Wellness Check-In</h1>
+            <p class="page-sub">A 10-second daily log. Checking in again today updates today's entry.</p>
+
+            <label class="field-label">Mood</label>
+            <div class="emoji-select" id="wellness-mood-select">
+              <button type="button" data-value="1">😞</button>
+              <button type="button" data-value="2">😕</button>
+              <button type="button" data-value="3">😐</button>
+              <button type="button" data-value="4">🙂</button>
+              <button type="button" data-value="5">😄</button>
+            </div>
+
+            <label class="field-label" style="margin-top:16px;">Stress (1 = calm, 5 = overwhelmed)</label>
+            <div class="emoji-select" id="wellness-stress-select">
+              <button type="button" data-value="1">1</button>
+              <button type="button" data-value="2">2</button>
+              <button type="button" data-value="3">3</button>
+              <button type="button" data-value="4">4</button>
+              <button type="button" data-value="5">5</button>
+            </div>
+
+            <div class="field-row" style="margin-top:16px;">
+              <input id="wellness-sleep" type="number" placeholder="Hours of sleep last night" min="0" max="24" step="0.5" class="field-full">
+              <input id="wellness-note" type="text" placeholder="Note (optional)" class="field-full">
+              <button id="wellness-save-btn" class="field-full">Save Today's Check-In</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2 class="section-title">Last 14 Days</h2>
+            <div class="trend-row" id="wellness-trend"></div>
+          </div>
+
+          <div class="card">
+            <p class="backup-note" style="margin:0;">Feeling overwhelmed is normal, especially early on. UW-Madison's University Health Services offers free, confidential counseling for students — <a href="https://www.uhs.wisc.edu/mental-health/" target="_blank" rel="noopener">uhs.wisc.edu</a>.</p>
+          </div>
+        </section>
+
+        <!-- CONTACTS -->
+        <section id="panel-contacts" class="panel" hidden>
+          <div class="card">
+            <h1 class="page-title">Contacts &amp; Resources</h1>
+            <p class="page-sub">People and offices you might need in a hurry.</p>
+
+            <div class="field-row">
+              <input id="contact-name" type="text" placeholder="Name or office" class="field-full">
+              <select id="contact-role" class="field-full"></select>
+              <input id="contact-phone" type="tel" placeholder="Phone (optional)" class="field-half">
+              <input id="contact-email" type="email" placeholder="Email (optional)" class="field-half">
+              <input id="contact-notes" type="text" placeholder="Notes (optional, e.g. office hours)" class="field-full">
+              <button id="contact-add-btn" class="field-full">Add Contact</button>
+            </div>
+
+            <ul class="list" id="contact-list"></ul>
+          </div>
+        </section>
+
+        <!-- GUIDE -->
+        <section id="panel-guide" class="panel" hidden>
+          <div class="card">
+            <h1 class="page-title">Survival Guide</h1>
+            <p class="page-sub">Checklists and quick answers for the stuff nobody explains.</p>
+          </div>
+
+          <div class="card">
+            <h2 class="section-title">Move-In Checklist</h2>
+            <ul class="list" id="checklist-movein"></ul>
+          </div>
+
+          <div class="card">
+            <h2 class="section-title">First Week Checklist</h2>
+            <ul class="list" id="checklist-firstweek"></ul>
+          </div>
+
+          <div class="card">
+            <h2 class="section-title">How College Works</h2>
+            <div id="guide-reference"></div>
+          </div>
+        </section>
+
+        <!-- WEATHER -->
+        <section id="panel-weather" class="panel" hidden>
+          <div class="card">
+            <h1 class="page-title">Madison, WI</h1>
+            <p class="page-sub">Local weather, at a glance.</p>
+            <div id="weather-widget"><div class="empty-state">Loading weather…</div></div>
+          </div>
+
+          <div class="card">
+            <h2 class="section-title">Local &amp; Campus News</h2>
+            <ul class="list" id="news-links"></ul>
           </div>
         </section>
 
@@ -1995,6 +2136,541 @@
   })();
 
   /* ============================================================
+     ASSIGNMENTS
+     ============================================================ */
+  (function () {
+    const STORAGE_KEY = 'college-toolkit:assignments';
+    let assignments = loadJSON(STORAGE_KEY, []);
+    let nextId = assignments.reduce((max, a) => Math.max(max, a.id), 0) + 1;
+
+    function save() { saveJSON(STORAGE_KEY, assignments); }
+
+    const titleInput = document.getElementById('asg-title');
+    const courseSelect = document.getElementById('asg-course');
+    const dueInput = document.getElementById('asg-due');
+    const pointsInput = document.getElementById('asg-points');
+    const addBtn = document.getElementById('asg-add-btn');
+    const list = document.getElementById('asg-list');
+
+    function getCourses() { return loadJSON('college-toolkit:gpa', []); }
+
+    function refreshCourseOptions() {
+      const courses = getCourses();
+      const current = courseSelect.value;
+      courseSelect.innerHTML = '';
+      if (courses.length === 0) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = 'Add a course in GPA first';
+        courseSelect.appendChild(opt);
+        courseSelect.disabled = true;
+        return;
+      }
+      courseSelect.disabled = false;
+      courses.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = `${c.name} (${c.term || 'General'})`;
+        courseSelect.appendChild(opt);
+      });
+      if (courses.some(c => String(c.id) === current)) courseSelect.value = current;
+    }
+
+    function addAssignment() {
+      const title = titleInput.value.trim();
+      const courseId = courseSelect.value;
+      const due = dueInput.value || null;
+      const points = parseFloat(pointsInput.value);
+      if (!title || !courseId || isNaN(points) || points <= 0) return;
+
+      assignments.push({ id: nextId++, courseId: Number(courseId), title, dueDate: due, pointsPossible: points, pointsEarned: null });
+      save();
+      titleInput.value = '';
+      dueInput.value = '';
+      pointsInput.value = '';
+      titleInput.focus();
+      render();
+    }
+
+    function removeAssignment(id) {
+      const index = assignments.findIndex(a => a.id === id);
+      if (index === -1) return;
+      const removed = assignments[index];
+      assignments = assignments.filter(a => a.id !== id);
+      save();
+      render();
+      showUndoToast(`Deleted "${removed.title}"`, () => {
+        assignments.splice(index, 0, removed);
+        save();
+        render();
+      });
+    }
+
+    function gradeAssignment(id) {
+      const a = assignments.find(a => a.id === id);
+      if (!a) return;
+      const input = prompt(`Score received (out of ${a.pointsPossible}):`, a.pointsEarned ?? '');
+      if (input === null) return;
+      const score = parseFloat(input);
+      if (isNaN(score) || score < 0) { alert('Enter a number 0 or higher.'); return; }
+      a.pointsEarned = score;
+      save();
+      render();
+    }
+
+    function render() {
+      refreshCourseOptions();
+      const courses = getCourses();
+      list.innerHTML = '';
+
+      if (assignments.length === 0) {
+        list.innerHTML = '<li class="empty-state">No assignments yet — add one above</li>';
+        return;
+      }
+
+      const courseOrder = [];
+      assignments.forEach(a => { if (!courseOrder.includes(a.courseId)) courseOrder.push(a.courseId); });
+
+      courseOrder.forEach(courseId => {
+        const course = courses.find(c => c.id === courseId);
+        const courseAssignments = assignments
+          .filter(a => a.courseId === courseId)
+          .sort((a, b) => (a.dueDate || '9999-99-99').localeCompare(b.dueDate || '9999-99-99'));
+
+        const graded = courseAssignments.filter(a => a.pointsEarned !== null);
+        const earned = graded.reduce((s, a) => s + a.pointsEarned, 0);
+        const possible = graded.reduce((s, a) => s + a.pointsPossible, 0);
+        const gradeLabel = possible > 0 ? `${Math.round((earned / possible) * 100)}%` : '—';
+
+        const header = document.createElement('li');
+        header.className = 'group-header';
+        header.innerHTML = `<span>${course ? course.name : 'Deleted course'}</span><span>${gradeLabel}</span>`;
+        list.appendChild(header);
+
+        courseAssignments.forEach(a => {
+          const isGraded = a.pointsEarned !== null;
+          const li = document.createElement('li');
+          li.innerHTML = `
+            <span class="row-info">
+              <span class="row-details">
+                <span class="row-name">${a.title}</span>
+                <span class="row-meta">${a.dueDate ? formatShortDate(a.dueDate) : 'No due date'}</span>
+              </span>
+            </span>
+            <span class="row-right">
+              <span class="row-amount" style="font-size:12px;">${isGraded ? `${a.pointsEarned}/${a.pointsPossible}` : `${a.pointsPossible} pts`}</span>
+              <button class="icon-btn" data-grade="${a.id}" title="Enter score" aria-label="Enter score for ${a.title}">✏️</button>
+              <button class="icon-btn" data-id="${a.id}" title="Delete assignment" aria-label="Delete ${a.title}">🗑</button>
+            </span>
+          `;
+          list.appendChild(li);
+        });
+      });
+    }
+
+    addBtn.addEventListener('click', addAssignment);
+    titleInput.addEventListener('keydown', e => { if (e.key === 'Enter') addAssignment(); });
+
+    list.addEventListener('click', e => {
+      const gradeBtn = e.target.closest('[data-grade]');
+      if (gradeBtn) { gradeAssignment(Number(gradeBtn.dataset.grade)); return; }
+      const delBtn = e.target.closest('.icon-btn[data-id]');
+      if (delBtn) removeAssignment(Number(delBtn.dataset.id));
+    });
+
+    render();
+  })();
+
+  /* ============================================================
+     WELLNESS
+     ============================================================ */
+  (function () {
+    const STORAGE_KEY = 'college-toolkit:wellness';
+    let entries = loadJSON(STORAGE_KEY, []); // { date, mood, stress, sleepHours, note }
+
+    function save() { saveJSON(STORAGE_KEY, entries); }
+
+    const moodSelect = document.getElementById('wellness-mood-select');
+    const stressSelect = document.getElementById('wellness-stress-select');
+    const sleepInput = document.getElementById('wellness-sleep');
+    const noteInput = document.getElementById('wellness-note');
+    const saveBtn = document.getElementById('wellness-save-btn');
+    const trendEl = document.getElementById('wellness-trend');
+
+    let selectedMood = null;
+    let selectedStress = null;
+
+    function selectButton(container, value) {
+      Array.from(container.children).forEach(btn => {
+        btn.classList.toggle('active', Number(btn.dataset.value) === value);
+      });
+    }
+
+    moodSelect.addEventListener('click', e => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      selectedMood = Number(btn.dataset.value);
+      selectButton(moodSelect, selectedMood);
+    });
+
+    stressSelect.addEventListener('click', e => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      selectedStress = Number(btn.dataset.value);
+      selectButton(stressSelect, selectedStress);
+    });
+
+    function loadTodayIntoForm() {
+      const today = entries.find(e => e.date === todayISO());
+      selectedMood = today ? today.mood : null;
+      selectedStress = today ? today.stress : null;
+      selectButton(moodSelect, selectedMood);
+      selectButton(stressSelect, selectedStress);
+      sleepInput.value = today && today.sleepHours != null ? today.sleepHours : '';
+      noteInput.value = today ? today.note || '' : '';
+    }
+
+    function saveCheckIn() {
+      if (!selectedMood) { alert('Pick a mood first.'); return; }
+      const todayIso = todayISO();
+      const sleepHours = sleepInput.value ? parseFloat(sleepInput.value) : null;
+      const note = noteInput.value.trim();
+      const existingIndex = entries.findIndex(e => e.date === todayIso);
+      const entry = { date: todayIso, mood: selectedMood, stress: selectedStress, sleepHours, note };
+      if (existingIndex === -1) entries.push(entry);
+      else entries[existingIndex] = entry;
+      save();
+      renderTrend();
+    }
+
+    const MOOD_EMOJI = { 1: '😞', 2: '😕', 3: '😐', 4: '🙂', 5: '😄' };
+
+    function renderTrend() {
+      const days = [];
+      const today = new Date();
+      for (let i = 13; i >= 0; i--) {
+        const d = new Date(today);
+        d.setDate(d.getDate() - i);
+        days.push(isoOfDate(d));
+      }
+
+      trendEl.innerHTML = days.map(iso => {
+        const entry = entries.find(e => e.date === iso);
+        const label = parseISODate(iso).toLocaleDateString('en-US', { weekday: 'narrow' });
+        if (!entry) {
+          return `
+            <div class="trend-bar-wrap">
+              <span class="trend-value">·</span>
+              <div class="trend-bar" style="height:2%; background:var(--wash);"></div>
+              <span class="trend-label">${label}</span>
+            </div>
+          `;
+        }
+        const heightPct = entry.sleepHours != null ? Math.min((entry.sleepHours / 10) * 100, 100) : 15;
+        return `
+          <div class="trend-bar-wrap">
+            <span class="trend-value">${MOOD_EMOJI[entry.mood] || ''}</span>
+            <div class="trend-bar" style="height:${heightPct}%"></div>
+            <span class="trend-label">${label}</span>
+          </div>
+        `;
+      }).join('');
+    }
+
+    saveBtn.addEventListener('click', saveCheckIn);
+
+    loadTodayIntoForm();
+    renderTrend();
+  })();
+
+  /* ============================================================
+     CONTACTS & RESOURCES
+     ============================================================ */
+  (function () {
+    const STORAGE_KEY = 'college-toolkit:contacts';
+    const SEEDED_KEY = 'college-toolkit:contacts-seeded';
+    const ROLES = ['Advisor', 'Professor', 'RA', 'Roommate', 'Friend', 'Family', 'Campus Resource', 'Other'];
+
+    let contacts = loadJSON(STORAGE_KEY, []);
+    let nextId = contacts.reduce((max, c) => Math.max(max, c.id), 0) + 1;
+
+    if (!loadJSON(SEEDED_KEY, false) && contacts.length === 0) {
+      const starter = [
+        { name: 'Emergency', role: 'Campus Resource', phone: '911', email: '', notes: 'Police, fire, or medical emergency' },
+        { name: 'UW-Madison Police (Non-Emergency)', role: 'Campus Resource', phone: '', email: '', notes: 'Look up & save from uwpd.wisc.edu' },
+        { name: 'University Health Services', role: 'Campus Resource', phone: '', email: '', notes: 'Medical + mental health — uhs.wisc.edu' },
+        { name: 'Dean of Students Office', role: 'Campus Resource', phone: '', email: '', notes: 'doso.students.wisc.edu' },
+        { name: 'McBurney Disability Resource Center', role: 'Campus Resource', phone: '', email: '', notes: 'mcburney.wisc.edu' },
+        { name: 'Office of Student Financial Aid', role: 'Campus Resource', phone: '', email: '', notes: 'financialaid.wisc.edu' },
+        { name: "Registrar's Office", role: 'Campus Resource', phone: '', email: '', notes: 'registrar.wisc.edu' },
+      ];
+      contacts = starter.map(c => ({ id: nextId++, ...c }));
+      saveJSON(STORAGE_KEY, contacts);
+      saveJSON(SEEDED_KEY, true);
+    }
+
+    function save() { saveJSON(STORAGE_KEY, contacts); }
+
+    const nameInput = document.getElementById('contact-name');
+    const roleSelect = document.getElementById('contact-role');
+    const phoneInput = document.getElementById('contact-phone');
+    const emailInput = document.getElementById('contact-email');
+    const notesInput = document.getElementById('contact-notes');
+    const addBtn = document.getElementById('contact-add-btn');
+    const list = document.getElementById('contact-list');
+
+    ROLES.forEach(role => {
+      const opt = document.createElement('option');
+      opt.value = role;
+      opt.textContent = role;
+      roleSelect.appendChild(opt);
+    });
+
+    function addContact() {
+      const name = nameInput.value.trim();
+      if (!name) return;
+      contacts.push({
+        id: nextId++,
+        name,
+        role: roleSelect.value,
+        phone: phoneInput.value.trim(),
+        email: emailInput.value.trim(),
+        notes: notesInput.value.trim(),
+      });
+      save();
+      nameInput.value = '';
+      phoneInput.value = '';
+      emailInput.value = '';
+      notesInput.value = '';
+      nameInput.focus();
+      render();
+    }
+
+    function removeContact(id) {
+      const index = contacts.findIndex(c => c.id === id);
+      if (index === -1) return;
+      const removed = contacts[index];
+      contacts = contacts.filter(c => c.id !== id);
+      save();
+      render();
+      showUndoToast(`Deleted "${removed.name}"`, () => {
+        contacts.splice(index, 0, removed);
+        save();
+        render();
+      });
+    }
+
+    function render() {
+      list.innerHTML = '';
+      if (contacts.length === 0) {
+        list.innerHTML = '<li class="empty-state">No contacts yet — add one above</li>';
+        return;
+      }
+
+      const roleOrder = [];
+      contacts.forEach(c => { if (!roleOrder.includes(c.role)) roleOrder.push(c.role); });
+
+      roleOrder.forEach(role => {
+        const header = document.createElement('li');
+        header.className = 'group-header';
+        header.innerHTML = `<span>${role}</span>`;
+        list.appendChild(header);
+
+        contacts.filter(c => c.role === role).forEach(c => {
+          const metaParts = [];
+          if (c.phone) metaParts.push(`<a href="tel:${c.phone.replace(/[^\d+]/g, '')}" style="color:inherit;">${c.phone}</a>`);
+          if (c.email) metaParts.push(`<a href="mailto:${c.email}" style="color:inherit;">${c.email}</a>`);
+          if (c.notes) metaParts.push(c.notes);
+
+          const li = document.createElement('li');
+          li.innerHTML = `
+            <span class="row-info">
+              <span class="row-details">
+                <span class="row-name">${c.name}</span>
+                ${metaParts.length ? `<span class="row-meta">${metaParts.join(' · ')}</span>` : ''}
+              </span>
+            </span>
+            <button class="icon-btn" data-id="${c.id}" title="Delete contact" aria-label="Delete ${c.name}">🗑</button>
+          `;
+          list.appendChild(li);
+        });
+      });
+    }
+
+    addBtn.addEventListener('click', addContact);
+    nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') addContact(); });
+
+    list.addEventListener('click', e => {
+      const btn = e.target.closest('.icon-btn');
+      if (btn) removeContact(Number(btn.dataset.id));
+    });
+
+    render();
+  })();
+
+  /* ============================================================
+     SURVIVAL GUIDE
+     ============================================================ */
+  (function () {
+    const MOVE_IN_ITEMS = [
+      'Bedding, pillow & mattress pad',
+      'Toiletries & shower caddy',
+      'Laundry bag/hamper & detergent',
+      'School supplies (notebooks, pens, backpack)',
+      'Laptop & charger',
+      'Student ID, insurance card & other documents',
+      'Any medications, plus a small first-aid kit',
+      'Weather-appropriate clothing (Madison winters are serious)',
+      'Command strips, hooks & a power strip',
+      'Cash and a debit/credit card',
+    ];
+
+    const FIRST_WEEK_ITEMS = [
+      'Get your Wiscard (student ID)',
+      'Set up your NetID and campus email',
+      'Walk your class schedule so you know where buildings are',
+      'Buy or rent your textbooks',
+      'Meet your RA and floor/hall mates',
+      'Locate University Health Services',
+      "Set up your meal plan if you haven't already",
+      'Learn the Madison Metro / campus bus routes',
+      'Save campus safety numbers in Contacts',
+      'Check in with your academic advisor',
+      'Check out a club or org fair',
+    ];
+
+    const REFERENCE_CARDS = [
+      { title: 'Office Hours', body: 'Set times each week when a professor or TA is available for drop-in questions — no appointment needed. Use them; they exist for you.' },
+      { title: 'Add/Drop Deadlines', body: 'Early in the semester you can add or drop a class with no penalty. After that, dropping may leave a "W" on your transcript or cost a fee — check your registrar\'s calendar.' },
+      { title: 'Credit Hours & GPA', body: 'Each class is worth a number of credits. Your GPA is a weighted average of your grades, weighted by those credits — a 4-credit A counts more than a 1-credit A.' },
+      { title: 'Emailing a Professor', body: 'Use your school email, a clear subject line, their proper title, and sign your full name and course. Keep it short — they get a lot of email.' },
+      { title: 'Academic Advising', body: "Your advisor helps you pick classes and stay on track for your major — meet with them at least once a semester, not just when something's wrong." },
+      { title: 'Withdrawing From a Class', body: "Different from dropping — usually happens later in the semester and needs advisor or Dean of Students sign-off. Ask before the deadline sneaks up." },
+      { title: 'Financial Aid Basics', body: "File the FAFSA every year, even if you think you won't qualify. Watch for financial aid deadlines separate from tuition due dates." },
+      { title: 'Syllabus Week', body: 'The first week is usually light on work but heavy on setup — read every syllabus for due dates, grading breakdowns, and attendance policy.' },
+    ];
+
+    const moveInList = document.getElementById('checklist-movein');
+    const firstWeekList = document.getElementById('checklist-firstweek');
+    const referenceEl = document.getElementById('guide-reference');
+
+    function renderChecklist(listEl, items, storageKey) {
+      const checked = loadJSON(storageKey, {});
+      listEl.innerHTML = items.map((label, i) => `
+        <li>
+          <span class="row-info">
+            <input type="checkbox" class="guide-check" data-key="${storageKey}" data-index="${i}" ${checked[i] ? 'checked' : ''} style="width:18px;height:18px;flex-shrink:0;">
+            <span class="row-name" style="${checked[i] ? 'text-decoration:line-through;color:var(--muted);' : ''}">${label}</span>
+          </span>
+        </li>
+      `).join('');
+    }
+
+    function toggleChecklistItem(storageKey, index) {
+      const checked = loadJSON(storageKey, {});
+      checked[index] = !checked[index];
+      saveJSON(storageKey, checked);
+      if (storageKey === 'college-toolkit:checklist-movein') renderChecklist(moveInList, MOVE_IN_ITEMS, storageKey);
+      else renderChecklist(firstWeekList, FIRST_WEEK_ITEMS, storageKey);
+    }
+
+    document.getElementById('panel-guide').addEventListener('click', e => {
+      const check = e.target.closest('.guide-check');
+      if (!check) return;
+      toggleChecklistItem(check.dataset.key, Number(check.dataset.index));
+    });
+
+    renderChecklist(moveInList, MOVE_IN_ITEMS, 'college-toolkit:checklist-movein');
+    renderChecklist(firstWeekList, FIRST_WEEK_ITEMS, 'college-toolkit:checklist-firstweek');
+
+    referenceEl.innerHTML = REFERENCE_CARDS.map(card => `
+      <div class="guide-card">
+        <h3>${card.title}</h3>
+        <p>${card.body}</p>
+      </div>
+    `).join('');
+  })();
+
+  /* ============================================================
+     WEATHER & NEWS
+     ============================================================ */
+  (function () {
+    const widget = document.getElementById('weather-widget');
+    const newsList = document.getElementById('news-links');
+
+    const WEATHER_CODES = {
+      0: ['☀️', 'Clear sky'], 1: ['🌤️', 'Mostly clear'], 2: ['⛅', 'Partly cloudy'], 3: ['☁️', 'Overcast'],
+      45: ['🌫️', 'Fog'], 48: ['🌫️', 'Freezing fog'],
+      51: ['🌦️', 'Light drizzle'], 53: ['🌦️', 'Drizzle'], 55: ['🌦️', 'Heavy drizzle'],
+      61: ['🌧️', 'Light rain'], 63: ['🌧️', 'Rain'], 65: ['🌧️', 'Heavy rain'],
+      71: ['🌨️', 'Light snow'], 73: ['🌨️', 'Snow'], 75: ['❄️', 'Heavy snow'], 77: ['❄️', 'Snow grains'],
+      80: ['🌦️', 'Rain showers'], 81: ['🌧️', 'Rain showers'], 82: ['⛈️', 'Violent showers'],
+      85: ['🌨️', 'Snow showers'], 86: ['❄️', 'Heavy snow showers'],
+      95: ['⛈️', 'Thunderstorm'], 96: ['⛈️', 'Thunderstorm w/ hail'], 99: ['⛈️', 'Severe thunderstorm'],
+    };
+
+    function renderFallback() {
+      widget.innerHTML = `
+        <div class="empty-state weather-fallback">
+          Couldn't load live weather right now.<br>
+          Check <a href="https://forecast.weather.gov/MapClick.php?lat=43.0731&lon=-89.4012" target="_blank" rel="noopener">weather.gov</a> for Madison, WI.
+        </div>
+      `;
+    }
+
+    async function loadWeather() {
+      try {
+        const url = 'https://api.open-meteo.com/v1/forecast?latitude=43.0731&longitude=-89.4012'
+          + '&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min'
+          + '&temperature_unit=fahrenheit&timezone=America%2FChicago&forecast_days=1';
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('bad response');
+        const data = await res.json();
+
+        const temp = Math.round(data.current.temperature_2m);
+        const code = data.current.weather_code;
+        const [icon, desc] = WEATHER_CODES[code] || ['🌡️', 'Unknown'];
+        const hi = Math.round(data.daily.temperature_2m_max[0]);
+        const lo = Math.round(data.daily.temperature_2m_min[0]);
+        const updated = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+        widget.innerHTML = `
+          <div class="weather-now">
+            <span class="weather-icon">${icon}</span>
+            <div>
+              <span class="weather-temp">${temp}°F</span>
+              <div class="weather-desc">${desc}</div>
+            </div>
+          </div>
+          <div class="weather-range">H: ${hi}°F &nbsp; L: ${lo}°F</div>
+          <div class="weather-updated">Updated ${updated}</div>
+        `;
+      } catch (err) {
+        renderFallback();
+      }
+    }
+
+    loadWeather();
+
+    const NEWS_LINKS = [
+      { label: 'News @ UW–Madison', url: 'https://news.wisc.edu/' },
+      { label: 'The Daily Cardinal', url: 'https://dailycardinal.com/' },
+      { label: 'The Badger Herald', url: 'https://badgerherald.com/' },
+      { label: 'Wisconsin State Journal', url: 'https://madison.com/' },
+      { label: 'Channel3000 (WISC-TV)', url: 'https://www.channel3000.com/' },
+    ];
+
+    newsList.innerHTML = NEWS_LINKS.map(link => `
+      <li>
+        <a class="external-link" href="${link.url}" target="_blank" rel="noopener">
+          <span class="row-name">${link.label}</span>
+          <span class="row-meta">↗</span>
+        </a>
+      </li>
+    `).join('');
+  })();
+
+  /* ============================================================
      DASHBOARD
      ============================================================ */
   (function () {
@@ -2012,7 +2688,13 @@
       'college-toolkit:timer-settings',
       'college-toolkit:timer-sessions',
       'college-toolkit:habits',
-      'college-toolkit:theme'
+      'college-toolkit:theme',
+      'college-toolkit:assignments',
+      'college-toolkit:wellness',
+      'college-toolkit:contacts',
+      'college-toolkit:contacts-seeded',
+      'college-toolkit:checklist-movein',
+      'college-toolkit:checklist-firstweek'
     ];
 
     function renderStats() {
@@ -2023,6 +2705,8 @@
       const courses = loadJSON('college-toolkit:gpa', []);
       const sessions = loadJSON('college-toolkit:timer-sessions', { date: todayISO(), count: 0 });
       const habits = loadJSON('college-toolkit:habits', []);
+      const assignments = loadJSON('college-toolkit:assignments', []);
+      const wellness = loadJSON('college-toolkit:wellness', []);
 
       const todayIso = todayISO();
       const monthKey = todayIso.slice(0, 7);
@@ -2047,6 +2731,19 @@
 
       const sessionsToday = sessions.date === todayIso ? sessions.count : 0;
       const bestStreak = habits.reduce((max, h) => Math.max(max, currentStreak(h.checks || {})), 0);
+
+      const upcomingAssignments = assignments
+        .filter(a => a.pointsEarned === null && a.dueDate)
+        .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+      const nextAssignment = upcomingAssignments[0];
+      let assignmentCaption = 'All caught up';
+      if (nextAssignment) {
+        const daysUntil = Math.round((parseISODate(nextAssignment.dueDate) - parseISODate(todayIso)) / 86400000);
+        assignmentCaption = daysUntil <= 0 ? 'Due today' : daysUntil === 1 ? 'Due tomorrow' : `Due in ${daysUntil} days`;
+      }
+
+      const todayWellness = wellness.find(w => w.date === todayIso);
+      const MOOD_EMOJI = { 1: '😞', 2: '😕', 3: '😐', 4: '🙂', 5: '😄' };
 
       const cards = [
         {
@@ -2084,6 +2781,18 @@
           value: String(bestStreak),
           caption: bestStreak === 1 ? 'day' : 'days',
           captionClass: bestStreak > 0 ? 'good' : ''
+        },
+        {
+          icon: '📝', label: 'Next Due',
+          value: nextAssignment ? nextAssignment.title : '—',
+          caption: assignmentCaption,
+          captionClass: nextAssignment && parseISODate(nextAssignment.dueDate) <= parseISODate(todayIso) ? 'bad' : ''
+        },
+        {
+          icon: '💚', label: 'Today\'s Mood',
+          value: todayWellness ? MOOD_EMOJI[todayWellness.mood] : '—',
+          caption: todayWellness ? 'Checked in' : 'Not logged yet',
+          captionClass: ''
         }
       ];
 
@@ -2245,11 +2954,19 @@
       { label: 'Go to GPA', icon: '🎯', action: () => showPanel('gpa') },
       { label: 'Go to Timer', icon: '⏱️', action: () => showPanel('timer') },
       { label: 'Go to Habits', icon: '🔥', action: () => showPanel('habits') },
+      { label: 'Go to Assignments', icon: '📝', action: () => showPanel('assignments') },
+      { label: 'Go to Wellness', icon: '💚', action: () => showPanel('wellness') },
+      { label: 'Go to Contacts', icon: '👤', action: () => showPanel('contacts') },
+      { label: 'Go to Survival Guide', icon: '🧭', action: () => showPanel('guide') },
+      { label: 'Go to Weather', icon: '🌤️', action: () => showPanel('weather') },
       { label: 'Add an expense', icon: '➕', action: focusField({ panel: 'expenses', field: 'exp-name' }) },
       { label: 'Add a task', icon: '➕', action: focusField({ panel: 'todo', field: 'todo-text' }) },
       { label: 'Add a class', icon: '➕', action: focusField({ panel: 'schedule', field: 'sched-name' }) },
       { label: 'Add a course', icon: '➕', action: focusField({ panel: 'gpa', field: 'gpa-name' }) },
       { label: 'Add a habit', icon: '➕', action: focusField({ panel: 'habits', field: 'habit-name' }) },
+      { label: 'Add an assignment', icon: '➕', action: focusField({ panel: 'assignments', field: 'asg-title' }) },
+      { label: 'Add a contact', icon: '➕', action: focusField({ panel: 'contacts', field: 'contact-name' }) },
+      { label: 'Log today\'s wellness check-in', icon: '💚', action: () => showPanel('wellness') },
       { label: 'Toggle dark mode', icon: '🌓', action: () => themeToggleBtn.click() },
       { label: 'Export backup', icon: '⬇️', action: () => document.getElementById('backup-export-btn').click() },
       { label: 'Start focus timer', icon: '▶️', action: () => { showPanel('timer'); document.getElementById('timer-start-btn').click(); } },
