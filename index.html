@@ -1,0 +1,1826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weihan's AI Tools</title>
+<script>
+  // Applied before first paint so an explicit saved preference never flashes the wrong theme.
+  // No stored value = no attribute set here, which lets the prefers-color-scheme media query
+  // (and, when embedded as an artifact, the host page's own theme toggle) decide instead.
+  (function () {
+    try {
+      var saved = localStorage.getItem('college-toolkit:theme');
+      if (saved === 'dark' || saved === 'light') document.documentElement.dataset.theme = saved;
+    } catch (err) { /* localStorage unavailable — fall back to system preference */ }
+  })();
+</script>
+<style>
+  :root {
+    --accent: #5546e0;
+    --accent-strong: #4436c9;
+    --accent-wash: rgba(85, 70, 224, 0.1);
+    --good: #1f9d63;
+    --warn: #c98a12;
+    --bad: #d43f3f;
+    --bad-wash: rgba(212, 63, 63, 0.1);
+    --ember: #e8703a;
+
+    --paper: #eef1f7;
+    --surface: #ffffff;
+    --wash: #f1f3f9;
+    --line: #dfe3ee;
+    --hairline: #edf0f7;
+    --ink: #161a23;
+    --muted: #6b7086;
+    --icon-muted: #b7bcd0;
+
+    --shadow: rgba(23, 27, 41, 0.08);
+    --font-mono: ui-monospace, "SF Mono", "Roboto Mono", Menlo, Consolas, monospace;
+  }
+
+  :root[data-theme="dark"] {
+    --accent: #8a7dff;
+    --accent-strong: #a49bff;
+    --accent-wash: rgba(138, 125, 255, 0.16);
+    --good: #33c37f;
+    --warn: #e0a83a;
+    --bad: #ff6b6b;
+    --bad-wash: rgba(255, 107, 107, 0.14);
+    --ember: #f2895a;
+
+    --paper: #0d0f16;
+    --surface: #151824;
+    --wash: #1a1e2b;
+    --line: #262b3b;
+    --hairline: #1d212e;
+    --ink: #e7e9f4;
+    --muted: #8b90a6;
+    --icon-muted: #454a5f;
+
+    --shadow: rgba(0, 0, 0, 0.4);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --accent: #8a7dff;
+      --accent-strong: #a49bff;
+      --accent-wash: rgba(138, 125, 255, 0.16);
+      --good: #33c37f;
+      --warn: #e0a83a;
+      --bad: #ff6b6b;
+      --bad-wash: rgba(255, 107, 107, 0.14);
+      --ember: #f2895a;
+
+      --paper: #0d0f16;
+      --surface: #151824;
+      --wash: #1a1e2b;
+      --line: #262b3b;
+      --hairline: #1d212e;
+      --ink: #e7e9f4;
+      --muted: #8b90a6;
+      --icon-muted: #454a5f;
+
+      --shadow: rgba(0, 0, 0, 0.4);
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+  }
+
+  button:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+
+  .app { display: flex; min-height: 100vh; }
+
+  .sidebar {
+    width: 216px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border-right: 1px solid var(--hairline);
+    padding: 20px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+  }
+
+  .brand {
+    font-weight: 800;
+    font-size: 16px;
+    margin: 0 0 8px;
+    padding: 0 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    letter-spacing: -0.01em;
+  }
+
+  .nav-group { display: flex; flex-direction: column; gap: 2px; }
+
+  .nav-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: none;
+    border: none;
+    text-align: left;
+    width: 100%;
+    padding: 9px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+
+  .nav-btn:hover { background: var(--wash); color: var(--ink); }
+  .nav-btn.active { background: var(--accent-wash); color: var(--accent); }
+  .nav-icon { font-size: 15px; }
+
+  .sidebar-footer {
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .theme-toggle {
+    background: var(--wash);
+    color: var(--ink);
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border-radius: 50%;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .theme-toggle:hover { background: var(--accent-wash); }
+
+  .autosave-note { font-size: 11px; color: var(--muted); font-weight: 600; }
+
+  .content {
+    flex: 1;
+    padding: 32px 24px;
+    display: flex;
+    justify-content: center;
+  }
+
+  .content-inner { width: 100%; max-width: 480px; }
+
+  .panel[hidden] { display: none; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 14px;
+    box-shadow: 0 10px 30px var(--shadow);
+    padding: 24px;
+    margin-bottom: 18px;
+  }
+
+  .page-title { margin: 0 0 4px; font-size: 21px; text-wrap: balance; }
+  .page-sub { margin: 0 0 20px; font-size: 13px; color: var(--muted); }
+  .section-title { margin: 0 0 16px; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+
+  .field-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+
+  .field-full { flex: 1 1 100%; min-width: 0; }
+  .field-half { flex: 1; min-width: 0; }
+
+  input, select {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 16px;
+    outline: none;
+    font-family: inherit;
+    background: var(--surface);
+    color: var(--ink);
+    transition: border-color 0.15s ease;
+  }
+
+  input:focus, select:focus { border-color: var(--accent); }
+  input::placeholder { color: var(--icon-muted); }
+
+  .field-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 4px;
+    display: block;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  button {
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 10px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+
+  button:hover { background: var(--accent-strong); }
+  button.btn-secondary { background: var(--wash); color: var(--accent); }
+  button.btn-secondary:hover { background: var(--accent-wash); }
+
+  ul.list { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow-y: auto; }
+  ul.list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--hairline);
+    font-size: 14px;
+  }
+  ul.list li:last-child { border-bottom: none; }
+
+  .row-info { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+  .row-details { display: flex; flex-direction: column; min-width: 0; }
+  .row-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row-meta { font-size: 11px; color: var(--muted); }
+  .row-right { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+  .row-amount { font-weight: 600; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+  .pill {
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+
+  .icon-btn {
+    background: none;
+    color: var(--icon-muted);
+    font-size: 15px;
+    padding: 6px 8px;
+    line-height: 1;
+    border-radius: 8px;
+  }
+  .icon-btn:hover { background: var(--bad-wash); color: var(--bad); }
+
+  .empty-state { text-align: center; color: var(--muted); font-size: 14px; padding: 20px 0; }
+
+  .group-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 14px 0 6px;
+  }
+  .group-header:first-child { padding-top: 4px; }
+  .group-header.is-today { color: var(--accent); }
+  .group-header span:last-child { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-transform: none; letter-spacing: normal; }
+
+  .total-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--hairline);
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .total-row > span:last-child { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .sub-total-row { margin-top: 6px; padding-top: 0; border-top: none; font-size: 12px; font-weight: 600; color: var(--muted); }
+
+  .tab-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .tab-nav-btn {
+    background: var(--wash);
+    color: var(--accent);
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border-radius: 50%;
+    font-size: 17px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .tab-nav-btn:hover { background: var(--accent-wash); }
+  .tab-nav-info { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .tab-nav-label { font-weight: 700; font-size: 14px; }
+  .tab-nav-link { background: none; color: var(--accent); font-size: 11px; font-weight: 600; padding: 0; }
+  .tab-nav-link:hover { background: none; text-decoration: underline; }
+
+  .sort-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; font-size: 12px; color: var(--muted); }
+  .sort-row select { font-size: 12px; padding: 6px 8px; border-radius: 8px; }
+
+  .filter-row { display: flex; gap: 6px; margin-bottom: 12px; }
+  .filter-btn { background: var(--wash); color: var(--muted); font-size: 12px; padding: 6px 12px; }
+  .filter-btn.active { background: var(--accent); color: #fff; }
+
+  .budget-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; font-size: 12px; color: var(--muted); }
+  .budget-input-wrap { display: flex; align-items: center; gap: 4px; }
+  .budget-input-wrap span { font-family: var(--font-mono); }
+  .budget-input-wrap input { width: 84px; padding: 6px 8px; font-size: 12px; font-family: var(--font-mono); }
+  .budget-bar-track { height: 6px; border-radius: 999px; background: var(--wash); overflow: hidden; margin-bottom: 16px; }
+  .budget-bar-fill { height: 100%; border-radius: 999px; background: var(--accent); transition: width 0.3s ease, background 0.3s ease; }
+  .budget-bar-fill.warn { background: var(--warn); }
+  .budget-bar-fill.over { background: var(--bad); }
+
+  .chart-row { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+  .pie { width: 108px; height: 108px; border-radius: 50%; flex-shrink: 0; background: var(--wash); }
+  .legend { flex: 1; min-width: 140px; display: flex; flex-direction: column; gap: 8px; }
+  .legend-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .legend-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  .legend-label { flex: 1; }
+  .legend-amount { font-weight: 600; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+  .gpa-display { text-align: center; padding: 12px 0 4px; }
+  .gpa-number { font-family: var(--font-mono); font-size: 38px; font-weight: 800; color: var(--accent); line-height: 1; font-variant-numeric: tabular-nums; }
+  .gpa-caption { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+  .timer-ring {
+    width: 196px;
+    height: 196px;
+    border-radius: 50%;
+    margin: 8px auto 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: conic-gradient(var(--accent) 0%, var(--wash) 0);
+    transition: background 0.3s linear;
+  }
+  .timer-ring-inner {
+    width: 162px;
+    height: 162px;
+    border-radius: 50%;
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .timer-time { font-family: var(--font-mono); font-size: 34px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .timer-mode { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-top: 4px; }
+  .timer-controls { display: flex; gap: 8px; justify-content: center; margin-bottom: 20px; }
+  .timer-settings { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; row-gap: 14px; }
+  .timer-settings .field { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .timer-settings input { width: 68px; text-align: center; font-family: var(--font-mono); }
+  .timer-sessions { text-align: center; margin-top: 18px; font-size: 12px; color: var(--muted); }
+
+  .habit-grid-header, .habit-row {
+    display: grid;
+    grid-template-columns: 1fr repeat(7, 26px) 26px;
+    align-items: center;
+    gap: 4px;
+  }
+  .habit-grid-header { font-size: 10px; font-weight: 700; color: var(--muted); text-align: center; padding-bottom: 8px; }
+  .habit-row { padding: 8px 0; border-bottom: 1px solid var(--hairline); }
+  .habit-row:last-child { border-bottom: none; }
+  .habit-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .streak-badge { font-size: 10px; color: var(--ember); font-weight: 700; margin-left: 3px; }
+  .habit-check { width: 22px; height: 22px; border-radius: 6px; border: 1.5px solid var(--line); background: var(--surface); cursor: pointer; margin: 0 auto; padding: 0; }
+  .habit-check.checked { background: var(--accent); border-color: var(--accent); }
+  .habit-check.is-today { border-color: var(--accent); }
+
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 18px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--hairline); border-radius: 14px; box-shadow: 0 6px 20px var(--shadow); padding: 16px; }
+  .stat-icon { font-size: 17px; }
+  .stat-label { font-size: 10px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; margin-top: 8px; }
+  .stat-value { font-family: var(--font-mono); font-size: 19px; font-weight: 800; margin-top: 3px; color: var(--ink); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .stat-caption { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .stat-caption.bad { color: var(--bad); }
+  .stat-caption.good { color: var(--good); }
+
+  .backup-note { font-size: 12px; color: var(--muted); margin: 0 0 16px; line-height: 1.5; }
+
+  .save-toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--ink);
+    color: var(--paper);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 8px 14px;
+    border-radius: 999px;
+    box-shadow: 0 8px 24px var(--shadow);
+    opacity: 0;
+    transform: translateY(8px);
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    z-index: 1000;
+  }
+  .save-toast.show { opacity: 1; transform: translateY(0); }
+
+  @media (max-width: 720px) {
+    .app { flex-direction: column; }
+    .sidebar {
+      position: static;
+      width: 100%;
+      height: auto;
+      flex-direction: row;
+      align-items: center;
+      overflow-y: visible;
+      border-right: none;
+      border-bottom: 1px solid var(--hairline);
+      padding: 8px 12px;
+      gap: 8px;
+    }
+    .brand { display: none; }
+    .nav-group { flex-direction: row; gap: 4px; overflow-x: auto; flex: 1; min-width: 0; }
+    .nav-btn { flex-direction: column; gap: 2px; font-size: 10px; padding: 8px 10px; white-space: nowrap; }
+    .sidebar-footer { margin-top: 0; flex-shrink: 0; }
+    .autosave-note { display: none; }
+    .content { padding: 20px 14px; }
+  }
+
+  @media (max-width: 420px) {
+    .card { padding: 18px; }
+    .field-half { flex: 1 1 100%; }
+    .habit-grid-header, .habit-row { grid-template-columns: 1fr repeat(7, 22px) 22px; }
+    .habit-check { width: 20px; height: 20px; }
+  }
+</style>
+</head>
+<body>
+
+  <div class="app">
+    <nav class="sidebar">
+      <div class="brand">🎓 College Toolkit</div>
+      <div class="nav-group">
+        <button class="nav-btn active" data-panel="dashboard"><span class="nav-icon">🏠</span><span>Dashboard</span></button>
+        <button class="nav-btn" data-panel="expenses"><span class="nav-icon">💰</span><span>Expenses</span></button>
+        <button class="nav-btn" data-panel="todo"><span class="nav-icon">✅</span><span>To-Do</span></button>
+        <button class="nav-btn" data-panel="schedule"><span class="nav-icon">📅</span><span>Schedule</span></button>
+        <button class="nav-btn" data-panel="gpa"><span class="nav-icon">🎯</span><span>GPA</span></button>
+        <button class="nav-btn" data-panel="timer"><span class="nav-icon">⏱️</span><span>Timer</span></button>
+        <button class="nav-btn" data-panel="habits"><span class="nav-icon">🔥</span><span>Habits</span></button>
+      </div>
+      <div class="sidebar-footer">
+        <button class="theme-toggle" id="theme-toggle-btn" title="Toggle dark mode" aria-label="Toggle dark mode">🌙</button>
+        <span class="autosave-note">🔒 Auto-saved</span>
+      </div>
+    </nav>
+
+    <main class="content">
+      <div class="content-inner">
+
+        <!-- DASHBOARD -->
+        <section id="panel-dashboard" class="panel">
+          <div class="card">
+            <h1 class="page-title">Dashboard</h1>
+            <p class="page-sub">Your college life at a glance.</p>
+          </div>
+
+          <div class="stat-grid" id="dash-stats"></div>
+
+          <div class="card">
+            <h2 class="section-title">Data &amp; Backup</h2>
+            <p class="backup-note">Everything you add saves automatically to this browser and is never deleted unless you delete it yourself. Download a backup file anytime for extra safety, or restore one below.</p>
+            <div class="field-row" style="margin-bottom:0;">
+              <button id="backup-export-btn" class="field-half btn-secondary">⬇ Export Backup</button>
+              <button id="backup-import-btn" class="field-half btn-secondary">⬆ Import Backup</button>
+            </div>
+            <input type="file" id="backup-file-input" accept="application/json" style="display:none;">
+          </div>
+        </section>
+
+        <!-- EXPENSES -->
+        <section id="panel-expenses" class="panel" hidden>
+          <div class="card">
+            <h1 class="page-title">Expenses</h1>
+            <p class="page-sub">Track spending by category, day, and month.</p>
+
+            <div class="field-row">
+              <input id="exp-name" type="text" placeholder="Expense name" class="field-full">
+              <input id="exp-date" type="date" class="field-full">
+              <input id="exp-amount" type="number" placeholder="Amount" step="0.01" inputmode="decimal" class="field-half">
+              <select id="exp-category" class="field-half"></select>
+              <button id="exp-add-btn" class="field-full">Add</button>
+            </div>
+
+            <div class="tab-nav">
+              <button class="tab-nav-btn" id="exp-prev-month" aria-label="Previous month">‹</button>
+              <div class="tab-nav-info">
+                <span class="tab-nav-label" id="exp-month-label"></span>
+                <button class="tab-nav-link" id="exp-today-btn">Today</button>
+              </div>
+              <button class="tab-nav-btn" id="exp-next-month" aria-label="Next month">›</button>
+            </div>
+
+            <div class="budget-row">
+              <span>Monthly Budget</span>
+              <div class="budget-input-wrap">
+                <span>$</span>
+                <input id="exp-budget-input" type="number" min="0" step="1" placeholder="Optional">
+              </div>
+            </div>
+            <div class="budget-bar-track" id="exp-budget-track" hidden>
+              <div class="budget-bar-fill" id="exp-budget-fill"></div>
+            </div>
+
+            <div class="sort-row">
+              <label for="exp-sort">Sort by</label>
+              <select id="exp-sort">
+                <option value="date-desc">Date (newest)</option>
+                <option value="date-asc">Date (oldest)</option>
+                <option value="name">Name</option>
+                <option value="amount-desc">Amount (high to low)</option>
+                <option value="amount-asc">Amount (low to high)</option>
+                <option value="category">Category</option>
+              </select>
+            </div>
+
+            <ul class="list" id="exp-list"></ul>
+
+            <div class="total-row">
+              <span>Month Total</span>
+              <span id="exp-total">$0.00</span>
+            </div>
+            <div class="total-row sub-total-row">
+              <span>Year Total (<span id="exp-year-label"></span>)</span>
+              <span id="exp-year-total">$0.00</span>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2 class="section-title" id="exp-chart-title">Spending by Category</h2>
+            <div class="chart-row">
+              <div class="pie" id="exp-pie"></div>
+              <div class="legend" id="exp-legend"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TO-DO -->
+        <section id="panel-todo" class="panel" hidden>
+          <div class="card">
+            <h1 class="page-title">To-Do List</h1>
+            <p class="page-sub">Keep track of assignments and errands.</p>
+
+            <div class="field-row">
+              <input id="todo-text" type="text" placeholder="Task name" class="field-full">
+              <input id="todo-date" type="date" class="field-half">
+              <select id="todo-priority" class="field-half"></select>
+              <button id="todo-add-btn" class="field-full">Add</button>
+            </div>
+
+            <div class="filter-row">
+              <button class="filter-btn active" data-filter="all">All</button>
+              <button class="filter-btn" data-filter="active">Active</button>
+              <button class="filter-btn" data-filter="completed">Completed</button>
+            </div>
+
+            <ul class="list" id="todo-list"></ul>
+
+            <div id="todo-summary" style="margin-top:16px; padding-top:16px; border-top:1px solid var(--hairline); text-align:center; color:var(--muted); font-size:12px; font-weight:600;"></div>
+          </div>
+        </section>
+
+        <!-- SCHEDULE -->
+        <section id="panel-schedule" class="panel" hidden>
+          <div class="card">
+            <h1 class="page-title">Class Schedule</h1>
+            <p class="page-sub">Your weekly classes at a glance.</p>
+
+            <div class="field-row">
+              <input id="sched-name" type="text" placeholder="Class name" class="field-full">
+              <select id="sched-day" class="field-full"></select>
+              <input id="sched-start" type="time" class="field-half">
+              <input id="sched-end" type="time" class="field-half">
+              <input id="sched-location" type="text" placeholder="Location (optional)" class="field-full">
+              <button id="sched-add-btn" class="field-full">Add Class</button>
+            </div>
+
+            <ul class="list" id="sched-list"></ul>
+          </div>
+        </section>
+
+        <!-- GPA -->
+        <section id="panel-gpa" class="panel" hidden>
+          <div class="card">
+            <h1 class="page-title">GPA Calculator</h1>
+            <p class="page-sub">Group courses by term to see per-term and cumulative GPA.</p>
+
+            <div class="field-row">
+              <input id="gpa-name" type="text" placeholder="Course name" class="field-full">
+              <input id="gpa-term" type="text" placeholder="Term (e.g. Fall 2026)" class="field-full">
+              <input id="gpa-credits" type="number" placeholder="Credits" min="0" step="0.5" class="field-half">
+              <select id="gpa-grade" class="field-half"></select>
+              <button id="gpa-add-btn" class="field-full">Add Course</button>
+            </div>
+
+            <ul class="list" id="gpa-list"></ul>
+
+            <div class="gpa-display">
+              <div class="gpa-number" id="gpa-value">0.00</div>
+              <div class="gpa-caption" id="gpa-caption">Add a course to calculate your GPA</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TIMER -->
+        <section id="panel-timer" class="panel" hidden>
+          <div class="card">
+            <h1 class="page-title">Study Timer</h1>
+            <p class="page-sub">Pomodoro-style focus sessions with long breaks.</p>
+
+            <div class="timer-ring" id="timer-ring">
+              <div class="timer-ring-inner">
+                <div class="timer-time" id="timer-time">25:00</div>
+                <div class="timer-mode" id="timer-mode">Focus</div>
+              </div>
+            </div>
+
+            <div class="timer-controls">
+              <button id="timer-start-btn">Start</button>
+              <button id="timer-reset-btn" class="btn-secondary">Reset</button>
+            </div>
+
+            <div class="timer-settings">
+              <div class="field">
+                <label class="field-label" for="timer-work-input">Focus</label>
+                <input id="timer-work-input" type="number" min="1" max="120" value="25">
+              </div>
+              <div class="field">
+                <label class="field-label" for="timer-break-input">Break</label>
+                <input id="timer-break-input" type="number" min="1" max="60" value="5">
+              </div>
+              <div class="field">
+                <label class="field-label" for="timer-longbreak-input">Long break</label>
+                <input id="timer-longbreak-input" type="number" min="1" max="120" value="15">
+              </div>
+              <div class="field">
+                <label class="field-label" for="timer-interval-input">Every</label>
+                <input id="timer-interval-input" type="number" min="2" max="10" value="4">
+              </div>
+            </div>
+
+            <div class="timer-sessions" id="timer-sessions"></div>
+          </div>
+        </section>
+
+        <!-- HABITS -->
+        <section id="panel-habits" class="panel" hidden>
+          <div class="card">
+            <h1 class="page-title">Habit Tracker</h1>
+            <p class="page-sub">Check off your habits day by day.</p>
+
+            <div class="field-row">
+              <input id="habit-name" type="text" placeholder="New habit (e.g. Drink water)" class="field-full">
+              <button id="habit-add-btn" class="field-full">Add Habit</button>
+            </div>
+
+            <div class="tab-nav">
+              <button class="tab-nav-btn" id="habit-prev-week" aria-label="Previous week">‹</button>
+              <div class="tab-nav-info">
+                <span class="tab-nav-label" id="habit-week-label"></span>
+                <button class="tab-nav-link" id="habit-today-btn">This Week</button>
+              </div>
+              <button class="tab-nav-btn" id="habit-next-week" aria-label="Next week">›</button>
+            </div>
+
+            <div class="habit-grid-header" id="habit-grid-header"></div>
+            <div id="habit-list"></div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <div class="save-toast" id="save-toast">✓ Saved</div>
+
+<script>
+  /* ---------- Shared helpers used by every tool ---------- */
+  let toastTimeout = null;
+  function showSavedToast() {
+    const toast = document.getElementById('save-toast');
+    if (!toast) return;
+    toast.classList.add('show');
+    clearTimeout(toastTimeout);
+    toastTimeout = setTimeout(() => toast.classList.remove('show'), 1400);
+  }
+
+  function loadJSON(key, fallback) {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : fallback;
+    } catch (err) {
+      console.warn('Could not load', key, err);
+      return fallback;
+    }
+  }
+
+  function saveJSON(key, value) {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+      showSavedToast();
+    } catch (err) {
+      console.warn('Could not save', key, err);
+    }
+  }
+
+  function todayISO() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  // Parses a "YYYY-MM-DD" string as a local date (avoids UTC/timezone off-by-one-day issues)
+  function parseISODate(iso) {
+    const [y, m, d] = iso.split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }
+
+  function isoOfDate(d) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  function formatShortDate(iso) {
+    return parseISODate(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  function formatTime12h(t) {
+    const [h, m] = t.split(':').map(Number);
+    const period = h >= 12 ? 'PM' : 'AM';
+    const h12 = ((h + 11) % 12) + 1;
+    return `${h12}:${String(m).padStart(2, '0')} ${period}`;
+  }
+
+  // Consecutive days (ending today or yesterday) present as truthy keys in a habit's checks map
+  function currentStreak(checks) {
+    if (!checks) return 0;
+    let streak = 0;
+    const cursor = new Date();
+    if (!checks[isoOfDate(cursor)]) cursor.setDate(cursor.getDate() - 1);
+    while (checks[isoOfDate(cursor)]) {
+      streak++;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    return streak;
+  }
+
+  const GRADE_POINTS = { A: 4.0, 'A-': 3.7, 'B+': 3.3, B: 3.0, 'B-': 2.7, 'C+': 2.3, C: 2.0, 'C-': 1.7, 'D+': 1.3, D: 1.0, F: 0.0 };
+
+  /* ---------- Dark mode toggle ---------- */
+  const themeToggleBtn = document.getElementById('theme-toggle-btn');
+  function isDark() {
+    const attr = document.documentElement.dataset.theme;
+    if (attr) return attr === 'dark';
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+  function updateThemeIcon() { themeToggleBtn.textContent = isDark() ? '☀️' : '🌙'; }
+  themeToggleBtn.addEventListener('click', () => {
+    const next = isDark() ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem('college-toolkit:theme', next); } catch (err) { /* ignore */ }
+    updateThemeIcon();
+  });
+  updateThemeIcon();
+
+  /* ---------- Sidebar navigation between tools ---------- */
+  let dashboardRefresh = null;
+  const navButtons = document.querySelectorAll('.nav-btn');
+  const panels = document.querySelectorAll('.panel');
+
+  function showPanel(name) {
+    if (!document.getElementById(`panel-${name}`)) name = 'dashboard';
+    panels.forEach(p => { p.hidden = p.id !== `panel-${name}`; });
+    navButtons.forEach(b => b.classList.toggle('active', b.dataset.panel === name));
+    history.replaceState(null, '', `#${name}`);
+    if (name === 'dashboard' && typeof dashboardRefresh === 'function') dashboardRefresh();
+  }
+
+  navButtons.forEach(btn => btn.addEventListener('click', () => showPanel(btn.dataset.panel)));
+  window.addEventListener('hashchange', () => showPanel(location.hash.slice(1)));
+
+  /* ============================================================
+     EXPENSES
+     ============================================================ */
+  (function () {
+    const CATEGORIES = {
+      food: { label: 'Food', color: '#ff7675' },
+      transport: { label: 'Transport', color: '#4d96ff' },
+      fun: { label: 'Fun', color: '#f6b93b' },
+      other: { label: 'Other', color: '#9b7bf0' }
+    };
+
+    const STORAGE_KEY = 'college-toolkit:expenses';
+    const LEGACY_KEY = 'expense-tracker-data';
+    const BUDGET_KEY = 'college-toolkit:expense-budget';
+
+    let expenses = loadJSON(STORAGE_KEY, null);
+    if (expenses === null) {
+      // First time this tool has run here: adopt data from the standalone expense tracker, if any
+      expenses = loadJSON(LEGACY_KEY, []);
+      if (expenses.length) saveJSON(STORAGE_KEY, expenses);
+    }
+    let nextId = expenses.reduce((max, e) => Math.max(max, e.id), 0) + 1;
+    let budget = loadJSON(BUDGET_KEY, null);
+
+    function save() { saveJSON(STORAGE_KEY, expenses); }
+
+    const nameInput = document.getElementById('exp-name');
+    const dateInput = document.getElementById('exp-date');
+    const amountInput = document.getElementById('exp-amount');
+    const categorySelect = document.getElementById('exp-category');
+    const sortSelect = document.getElementById('exp-sort');
+    const addBtn = document.getElementById('exp-add-btn');
+    const list = document.getElementById('exp-list');
+    const totalEl = document.getElementById('exp-total');
+    const pieEl = document.getElementById('exp-pie');
+    const legendEl = document.getElementById('exp-legend');
+    const prevMonthBtn = document.getElementById('exp-prev-month');
+    const nextMonthBtn = document.getElementById('exp-next-month');
+    const todayBtn = document.getElementById('exp-today-btn');
+    const monthLabelEl = document.getElementById('exp-month-label');
+    const yearLabelEl = document.getElementById('exp-year-label');
+    const yearTotalEl = document.getElementById('exp-year-total');
+    const chartTitleEl = document.getElementById('exp-chart-title');
+    const budgetInput = document.getElementById('exp-budget-input');
+    const budgetTrack = document.getElementById('exp-budget-track');
+    const budgetFill = document.getElementById('exp-budget-fill');
+
+    const now = new Date();
+    let viewYear = now.getFullYear();
+    let viewMonthIndex = now.getMonth();
+
+    Object.entries(CATEGORIES).forEach(([key, cat]) => {
+      const option = document.createElement('option');
+      option.value = key;
+      option.textContent = cat.label;
+      categorySelect.appendChild(option);
+    });
+
+    if (budget !== null) budgetInput.value = budget;
+
+    function formatDayLabel(iso) {
+      return parseISODate(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    }
+    function monthKeyOf(iso) { return iso.slice(0, 7); }
+    function viewedMonthKey() { return `${viewYear}-${String(viewMonthIndex + 1).padStart(2, '0')}`; }
+
+    dateInput.value = todayISO();
+
+    function addExpense() {
+      const name = nameInput.value.trim();
+      const amount = parseFloat(amountInput.value);
+      const category = categorySelect.value;
+      const date = dateInput.value || todayISO();
+      if (!name || isNaN(amount)) return;
+
+      expenses.push({ id: nextId++, name, amount, category, date });
+      save();
+
+      nameInput.value = '';
+      amountInput.value = '';
+      nameInput.focus();
+
+      const added = parseISODate(date);
+      viewYear = added.getFullYear();
+      viewMonthIndex = added.getMonth();
+
+      render();
+    }
+
+    function removeExpense(id) {
+      expenses = expenses.filter(e => e.id !== id);
+      save();
+      render();
+    }
+
+    function getSortedExpenses(expenseList) {
+      const sorted = [...expenseList];
+      switch (sortSelect.value) {
+        case 'date-asc': sorted.sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id); break;
+        case 'name': sorted.sort((a, b) => a.name.localeCompare(b.name)); break;
+        case 'amount-desc': sorted.sort((a, b) => b.amount - a.amount); break;
+        case 'amount-asc': sorted.sort((a, b) => a.amount - b.amount); break;
+        case 'category':
+          sorted.sort((a, b) =>
+            CATEGORIES[a.category].label.localeCompare(CATEGORIES[b.category].label) ||
+            b.date.localeCompare(a.date)
+          );
+          break;
+        case 'date-desc':
+        default: sorted.sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id); break;
+      }
+      return sorted;
+    }
+
+    function render() {
+      const monthLabel = new Date(viewYear, viewMonthIndex, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      monthLabelEl.textContent = monthLabel;
+      yearLabelEl.textContent = viewYear;
+      chartTitleEl.textContent = `Spending by Category · ${monthLabel}`;
+
+      const monthKey = viewedMonthKey();
+      const expensesInMonth = expenses.filter(e => monthKeyOf(e.date) === monthKey);
+
+      list.innerHTML = '';
+      if (expensesInMonth.length === 0) {
+        list.innerHTML = `<li class="empty-state">No expenses in ${monthLabel}</li>`;
+      } else {
+        const sorted = getSortedExpenses(expensesInMonth);
+        const groupByDay = sortSelect.value === 'date-desc' || sortSelect.value === 'date-asc';
+        const dayTotals = {};
+        expensesInMonth.forEach(e => { dayTotals[e.date] = (dayTotals[e.date] || 0) + e.amount; });
+        let currentDay = null;
+
+        sorted.forEach(expense => {
+          if (groupByDay && expense.date !== currentDay) {
+            currentDay = expense.date;
+            const header = document.createElement('li');
+            header.className = 'group-header';
+            header.innerHTML = `<span>${formatDayLabel(expense.date)}</span><span>$${dayTotals[expense.date].toFixed(2)}</span>`;
+            list.appendChild(header);
+          }
+
+          const cat = CATEGORIES[expense.category] || CATEGORIES.other;
+          const li = document.createElement('li');
+          li.innerHTML = `
+            <span class="row-info">
+              <span class="pill" style="background:${cat.color}22; color:${cat.color}">${cat.label}</span>
+              <span class="row-details">
+                <span class="row-name">${expense.name}</span>
+                <span class="row-meta">${formatShortDate(expense.date)}</span>
+              </span>
+            </span>
+            <span class="row-right">
+              <span class="row-amount">$${expense.amount.toFixed(2)}</span>
+              <button class="icon-btn" data-id="${expense.id}" title="Delete expense" aria-label="Delete ${expense.name}">🗑</button>
+            </span>
+          `;
+          list.appendChild(li);
+        });
+      }
+
+      const monthTotal = expensesInMonth.reduce((sum, e) => sum + e.amount, 0);
+      totalEl.textContent = '$' + monthTotal.toFixed(2);
+
+      const yearTotal = expenses
+        .filter(e => e.date.slice(0, 4) === String(viewYear))
+        .reduce((sum, e) => sum + e.amount, 0);
+      yearTotalEl.textContent = '$' + yearTotal.toFixed(2);
+
+      if (budget) {
+        budgetTrack.hidden = false;
+        const pct = Math.min(100, (monthTotal / budget) * 100);
+        budgetFill.style.width = pct + '%';
+        budgetFill.classList.toggle('over', monthTotal > budget);
+        budgetFill.classList.toggle('warn', monthTotal <= budget && monthTotal / budget >= 0.8);
+      } else {
+        budgetTrack.hidden = true;
+      }
+
+      renderChart(expensesInMonth, monthTotal);
+    }
+
+    function renderChart(expenseList, total) {
+      legendEl.innerHTML = '';
+
+      if (total === 0) {
+        pieEl.style.background = 'var(--wash)';
+        legendEl.innerHTML = '<div class="empty-state" style="padding:0;">Add expenses to see the breakdown</div>';
+        return;
+      }
+
+      const totals = {};
+      expenseList.forEach(e => { totals[e.category] = (totals[e.category] || 0) + e.amount; });
+
+      let cursor = 0;
+      const stops = [];
+      Object.entries(totals).forEach(([key, amount]) => {
+        const cat = CATEGORIES[key] || CATEGORIES.other;
+        const start = cursor;
+        const end = cursor + (amount / total) * 100;
+        stops.push(`${cat.color} ${start}% ${end}%`);
+        cursor = end;
+
+        const row = document.createElement('div');
+        row.className = 'legend-row';
+        row.innerHTML = `
+          <span class="legend-dot" style="background:${cat.color}"></span>
+          <span class="legend-label">${cat.label}</span>
+          <span class="legend-amount">$${amount.toFixed(2)}</span>
+        `;
+        legendEl.appendChild(row);
+      });
+
+      pieEl.style.background = `conic-gradient(${stops.join(', ')})`;
+    }
+
+    addBtn.addEventListener('click', addExpense);
+    nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') addExpense(); });
+    amountInput.addEventListener('keydown', e => { if (e.key === 'Enter') addExpense(); });
+    sortSelect.addEventListener('change', render);
+
+    budgetInput.addEventListener('change', () => {
+      const v = parseFloat(budgetInput.value);
+      budget = isNaN(v) || v <= 0 ? null : v;
+      saveJSON(BUDGET_KEY, budget);
+      render();
+    });
+
+    prevMonthBtn.addEventListener('click', () => {
+      viewMonthIndex--;
+      if (viewMonthIndex < 0) { viewMonthIndex = 11; viewYear--; }
+      render();
+    });
+    nextMonthBtn.addEventListener('click', () => {
+      viewMonthIndex++;
+      if (viewMonthIndex > 11) { viewMonthIndex = 0; viewYear++; }
+      render();
+    });
+    todayBtn.addEventListener('click', () => {
+      const t = new Date();
+      viewYear = t.getFullYear();
+      viewMonthIndex = t.getMonth();
+      render();
+    });
+
+    list.addEventListener('click', e => {
+      const btn = e.target.closest('.icon-btn');
+      if (btn) removeExpense(Number(btn.dataset.id));
+    });
+
+    render();
+  })();
+
+  /* ============================================================
+     TO-DO LIST
+     ============================================================ */
+  (function () {
+    const STORAGE_KEY = 'college-toolkit:todos';
+    const PRIORITIES = {
+      high: { label: 'High', color: '#d43f3f' },
+      medium: { label: 'Medium', color: '#5546e0' },
+      low: { label: 'Low', color: '#4d96ff' }
+    };
+    const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 };
+
+    let todos = loadJSON(STORAGE_KEY, []);
+    let nextId = todos.reduce((max, t) => Math.max(max, t.id), 0) + 1;
+    let filter = 'all';
+
+    function save() { saveJSON(STORAGE_KEY, todos); }
+
+    const textInput = document.getElementById('todo-text');
+    const dateInput = document.getElementById('todo-date');
+    const priorityInput = document.getElementById('todo-priority');
+    const addBtn = document.getElementById('todo-add-btn');
+    const list = document.getElementById('todo-list');
+    const summaryEl = document.getElementById('todo-summary');
+    const filterBtns = document.querySelectorAll('#panel-todo .filter-btn');
+
+    Object.entries(PRIORITIES).forEach(([key, p]) => {
+      const option = document.createElement('option');
+      option.value = key;
+      option.textContent = p.label;
+      priorityInput.appendChild(option);
+    });
+    priorityInput.value = 'medium';
+
+    function addTodo() {
+      const text = textInput.value.trim();
+      if (!text) return;
+      const dueDate = dateInput.value || null;
+      const priority = priorityInput.value || 'medium';
+      todos.push({ id: nextId++, text, done: false, dueDate, priority });
+      save();
+      textInput.value = '';
+      dateInput.value = '';
+      textInput.focus();
+      render();
+    }
+
+    function toggleTodo(id) {
+      const t = todos.find(t => t.id === id);
+      if (t) { t.done = !t.done; save(); render(); }
+    }
+
+    function deleteTodo(id) {
+      todos = todos.filter(t => t.id !== id);
+      save();
+      render();
+    }
+
+    function render() {
+      let visible = todos;
+      if (filter === 'active') visible = todos.filter(t => !t.done);
+      if (filter === 'completed') visible = todos.filter(t => t.done);
+
+      visible = [...visible].sort((a, b) => {
+        if (a.done !== b.done) return a.done ? 1 : -1;
+        const ad = a.dueDate || '9999-99-99';
+        const bd = b.dueDate || '9999-99-99';
+        const dateCompare = ad.localeCompare(bd);
+        if (dateCompare !== 0) return dateCompare;
+        return PRIORITY_ORDER[a.priority || 'medium'] - PRIORITY_ORDER[b.priority || 'medium'];
+      });
+
+      list.innerHTML = '';
+      if (visible.length === 0) {
+        const msg = filter === 'active' ? 'No active tasks'
+          : filter === 'completed' ? 'No completed tasks yet'
+          : 'No tasks yet — add your first one above';
+        list.innerHTML = `<li class="empty-state">${msg}</li>`;
+      } else {
+        visible.forEach(todo => {
+          const overdue = todo.dueDate && !todo.done && todo.dueDate < todayISO();
+          const p = PRIORITIES[todo.priority || 'medium'];
+          const li = document.createElement('li');
+          li.innerHTML = `
+            <span class="row-info">
+              <input type="checkbox" data-id="${todo.id}" class="todo-check" ${todo.done ? 'checked' : ''} style="width:18px;height:18px;flex-shrink:0;">
+              <span class="pill" style="background:${p.color}22; color:${p.color}">${p.label}</span>
+              <span class="row-details">
+                <span class="row-name" style="${todo.done ? 'text-decoration:line-through;color:var(--muted);' : ''}">${todo.text}</span>
+                ${todo.dueDate ? `<span class="row-meta" style="${overdue ? 'color:var(--bad);font-weight:600;' : ''}">${overdue ? 'Overdue · ' : ''}${formatShortDate(todo.dueDate)}</span>` : ''}
+              </span>
+            </span>
+            <button class="icon-btn" data-id="${todo.id}" title="Delete task" aria-label="Delete ${todo.text}">🗑</button>
+          `;
+          list.appendChild(li);
+        });
+      }
+
+      const remaining = todos.filter(t => !t.done).length;
+      summaryEl.textContent = `${remaining} of ${todos.length} remaining`;
+    }
+
+    addBtn.addEventListener('click', addTodo);
+    textInput.addEventListener('keydown', e => { if (e.key === 'Enter') addTodo(); });
+
+    filterBtns.forEach(btn => btn.addEventListener('click', () => {
+      filter = btn.dataset.filter;
+      filterBtns.forEach(b => b.classList.toggle('active', b === btn));
+      render();
+    }));
+
+    list.addEventListener('click', e => {
+      const checkbox = e.target.closest('.todo-check');
+      if (checkbox) { toggleTodo(Number(checkbox.dataset.id)); return; }
+      const del = e.target.closest('.icon-btn');
+      if (del) deleteTodo(Number(del.dataset.id));
+    });
+
+    render();
+  })();
+
+  /* ============================================================
+     CLASS SCHEDULE
+     ============================================================ */
+  (function () {
+    const STORAGE_KEY = 'college-toolkit:schedule';
+    let classes = loadJSON(STORAGE_KEY, []);
+    let nextId = classes.reduce((max, c) => Math.max(max, c.id), 0) + 1;
+
+    function save() { saveJSON(STORAGE_KEY, classes); }
+
+    const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const DAY_LABELS = { Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday', Thu: 'Thursday', Fri: 'Friday', Sat: 'Saturday', Sun: 'Sunday' };
+
+    const nameInput = document.getElementById('sched-name');
+    const daySelect = document.getElementById('sched-day');
+    const startInput = document.getElementById('sched-start');
+    const endInput = document.getElementById('sched-end');
+    const locationInput = document.getElementById('sched-location');
+    const addBtn = document.getElementById('sched-add-btn');
+    const list = document.getElementById('sched-list');
+
+    DAYS.forEach(day => {
+      const option = document.createElement('option');
+      option.value = day;
+      option.textContent = DAY_LABELS[day];
+      daySelect.appendChild(option);
+    });
+
+    function todayDayCode() {
+      return DAYS[(new Date().getDay() + 6) % 7];
+    }
+
+    function addClass() {
+      const name = nameInput.value.trim();
+      const day = daySelect.value;
+      const start = startInput.value;
+      const end = endInput.value;
+      const location = locationInput.value.trim();
+      if (!name || !start || !end) return;
+
+      classes.push({ id: nextId++, name, day, start, end, location });
+      save();
+
+      nameInput.value = '';
+      startInput.value = '';
+      endInput.value = '';
+      locationInput.value = '';
+      nameInput.focus();
+      render();
+    }
+
+    function removeClass(id) {
+      classes = classes.filter(c => c.id !== id);
+      save();
+      render();
+    }
+
+    function render() {
+      list.innerHTML = '';
+      if (classes.length === 0) {
+        list.innerHTML = '<li class="empty-state">No classes yet — add your schedule above</li>';
+        return;
+      }
+
+      const today = todayDayCode();
+      DAYS.forEach(day => {
+        const dayClasses = classes.filter(c => c.day === day).sort((a, b) => a.start.localeCompare(b.start));
+        if (dayClasses.length === 0) return;
+
+        const header = document.createElement('li');
+        header.className = 'group-header' + (day === today ? ' is-today' : '');
+        header.innerHTML = `<span>${DAY_LABELS[day]}${day === today ? ' · Today' : ''}</span>`;
+        list.appendChild(header);
+
+        dayClasses.forEach(c => {
+          const li = document.createElement('li');
+          li.innerHTML = `
+            <span class="row-info">
+              <span class="row-details">
+                <span class="row-name">${c.name}</span>
+                ${c.location ? `<span class="row-meta">${c.location}</span>` : ''}
+              </span>
+            </span>
+            <span class="row-right">
+              <span class="row-amount" style="font-size:12px; text-align:right;">${formatTime12h(c.start)} – ${formatTime12h(c.end)}</span>
+              <button class="icon-btn" data-id="${c.id}" title="Delete class" aria-label="Delete ${c.name}">🗑</button>
+            </span>
+          `;
+          list.appendChild(li);
+        });
+      });
+    }
+
+    addBtn.addEventListener('click', addClass);
+    list.addEventListener('click', e => {
+      const btn = e.target.closest('.icon-btn');
+      if (btn) removeClass(Number(btn.dataset.id));
+    });
+
+    render();
+  })();
+
+  /* ============================================================
+     GPA CALCULATOR
+     ============================================================ */
+  (function () {
+    const STORAGE_KEY = 'college-toolkit:gpa';
+    let courses = loadJSON(STORAGE_KEY, []);
+    let nextId = courses.reduce((max, c) => Math.max(max, c.id), 0) + 1;
+
+    function save() { saveJSON(STORAGE_KEY, courses); }
+
+    const nameInput = document.getElementById('gpa-name');
+    const termInput = document.getElementById('gpa-term');
+    const creditsInput = document.getElementById('gpa-credits');
+    const gradeSelect = document.getElementById('gpa-grade');
+    const addBtn = document.getElementById('gpa-add-btn');
+    const list = document.getElementById('gpa-list');
+    const valueEl = document.getElementById('gpa-value');
+    const captionEl = document.getElementById('gpa-caption');
+
+    Object.keys(GRADE_POINTS).forEach(grade => {
+      const option = document.createElement('option');
+      option.value = grade;
+      option.textContent = grade;
+      gradeSelect.appendChild(option);
+    });
+
+    function addCourse() {
+      const name = nameInput.value.trim();
+      const term = termInput.value.trim() || 'General';
+      const credits = parseFloat(creditsInput.value);
+      const grade = gradeSelect.value;
+      if (!name || isNaN(credits) || credits <= 0) return;
+
+      courses.push({ id: nextId++, name, term, credits, grade });
+      save();
+      nameInput.value = '';
+      termInput.value = '';
+      creditsInput.value = '';
+      nameInput.focus();
+      render();
+    }
+
+    function removeCourse(id) {
+      courses = courses.filter(c => c.id !== id);
+      save();
+      render();
+    }
+
+    function gpaOf(courseList) {
+      const totalCredits = courseList.reduce((s, c) => s + c.credits, 0);
+      const totalPoints = courseList.reduce((s, c) => s + c.credits * GRADE_POINTS[c.grade], 0);
+      return { totalCredits, gpa: totalCredits > 0 ? totalPoints / totalCredits : 0 };
+    }
+
+    function render() {
+      list.innerHTML = '';
+      if (courses.length === 0) {
+        list.innerHTML = '<li class="empty-state">No courses yet — add one above</li>';
+      } else {
+        const termOrder = [];
+        courses.forEach(c => {
+          const term = c.term || 'General';
+          if (!termOrder.includes(term)) termOrder.push(term);
+        });
+
+        termOrder.forEach(term => {
+          const termCourses = courses.filter(c => (c.term || 'General') === term);
+          const { gpa: termGpa } = gpaOf(termCourses);
+
+          const header = document.createElement('li');
+          header.className = 'group-header';
+          header.innerHTML = `<span>${term}</span><span>GPA ${termGpa.toFixed(2)}</span>`;
+          list.appendChild(header);
+
+          termCourses.forEach(c => {
+            const li = document.createElement('li');
+            li.innerHTML = `
+              <span class="row-info">
+                <span class="pill" style="background:var(--accent-wash); color:var(--accent);">${c.grade}</span>
+                <span class="row-details">
+                  <span class="row-name">${c.name}</span>
+                  <span class="row-meta">${c.credits} credit${c.credits === 1 ? '' : 's'}</span>
+                </span>
+              </span>
+              <button class="icon-btn" data-id="${c.id}" title="Delete course" aria-label="Delete ${c.name}">🗑</button>
+            `;
+            list.appendChild(li);
+          });
+        });
+      }
+
+      const { totalCredits, gpa } = gpaOf(courses);
+      valueEl.textContent = gpa.toFixed(2);
+      captionEl.textContent = totalCredits > 0 ? `Cumulative GPA · ${totalCredits} total credits` : 'Add a course to calculate your GPA';
+    }
+
+    addBtn.addEventListener('click', addCourse);
+    list.addEventListener('click', e => {
+      const btn = e.target.closest('.icon-btn');
+      if (btn) removeCourse(Number(btn.dataset.id));
+    });
+
+    render();
+  })();
+
+  /* ============================================================
+     STUDY TIMER
+     ============================================================ */
+  (function () {
+    const SETTINGS_KEY = 'college-toolkit:timer-settings';
+    const SESSIONS_KEY = 'college-toolkit:timer-sessions';
+
+    const settings = loadJSON(SETTINGS_KEY, { workMinutes: 25, breakMinutes: 5, longBreakMinutes: 15, longBreakInterval: 4 });
+    let sessionsData = loadJSON(SESSIONS_KEY, { date: todayISO(), count: 0 });
+    if (sessionsData.date !== todayISO()) sessionsData = { date: todayISO(), count: 0 };
+
+    const ringEl = document.getElementById('timer-ring');
+    const timeEl = document.getElementById('timer-time');
+    const modeEl = document.getElementById('timer-mode');
+    const startBtn = document.getElementById('timer-start-btn');
+    const resetBtn = document.getElementById('timer-reset-btn');
+    const workInput = document.getElementById('timer-work-input');
+    const breakInput = document.getElementById('timer-break-input');
+    const longBreakInput = document.getElementById('timer-longbreak-input');
+    const intervalInput = document.getElementById('timer-interval-input');
+    const sessionsEl = document.getElementById('timer-sessions');
+
+    workInput.value = settings.workMinutes;
+    breakInput.value = settings.breakMinutes;
+    longBreakInput.value = settings.longBreakMinutes;
+    intervalInput.value = settings.longBreakInterval;
+
+    let mode = 'focus'; // 'focus' | 'break' | 'longbreak'
+    let totalSeconds = settings.workMinutes * 60;
+    let secondsLeft = totalSeconds;
+    let running = false;
+    let intervalId = null;
+
+    function saveSettings() { saveJSON(SETTINGS_KEY, settings); }
+    function saveSessions() { saveJSON(SESSIONS_KEY, sessionsData); }
+
+    function formatTime(s) {
+      const m = Math.floor(s / 60);
+      const sec = s % 60;
+      return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+    }
+
+    function modeLabel() {
+      return mode === 'focus' ? 'Focus' : mode === 'longbreak' ? 'Long Break' : 'Break';
+    }
+
+    function updateDisplay() {
+      timeEl.textContent = formatTime(Math.max(secondsLeft, 0));
+      modeEl.textContent = modeLabel();
+      const elapsedPct = totalSeconds > 0 ? ((totalSeconds - secondsLeft) / totalSeconds) * 100 : 0;
+      ringEl.style.background = `conic-gradient(var(--accent) ${elapsedPct}%, var(--wash) 0)`;
+      const untilLong = settings.longBreakInterval - (sessionsData.count % settings.longBreakInterval);
+      sessionsEl.textContent = `Focus sessions today: ${sessionsData.count} · long break in ${untilLong}`;
+      startBtn.textContent = running ? 'Pause' : 'Start';
+    }
+
+    function tick() {
+      secondsLeft--;
+      if (secondsLeft <= 0) {
+        pause();
+        const finishedMode = mode;
+        let message;
+        if (mode === 'focus') {
+          sessionsData.count++;
+          saveSessions();
+          const isLongBreak = sessionsData.count % settings.longBreakInterval === 0;
+          mode = isLongBreak ? 'longbreak' : 'break';
+          totalSeconds = (isLongBreak ? settings.longBreakMinutes : settings.breakMinutes) * 60;
+          message = isLongBreak
+            ? "Great run! You've earned a long break."
+            : 'Nice work! Focus session complete — time for a break.';
+        } else {
+          mode = 'focus';
+          totalSeconds = settings.workMinutes * 60;
+          message = "Break's over. Ready for another focus session?";
+        }
+        secondsLeft = totalSeconds;
+        updateDisplay();
+        alert(message);
+        return;
+      }
+      updateDisplay();
+    }
+
+    function start() {
+      if (running) return;
+      running = true;
+      intervalId = setInterval(tick, 1000);
+      updateDisplay();
+    }
+
+    function pause() {
+      running = false;
+      clearInterval(intervalId);
+      updateDisplay();
+    }
+
+    function reset() {
+      pause();
+      mode = 'focus';
+      totalSeconds = settings.workMinutes * 60;
+      secondsLeft = totalSeconds;
+      updateDisplay();
+    }
+
+    startBtn.addEventListener('click', () => running ? pause() : start());
+    resetBtn.addEventListener('click', reset);
+
+    workInput.addEventListener('change', () => {
+      const v = Math.max(1, parseInt(workInput.value) || 25);
+      settings.workMinutes = v;
+      workInput.value = v;
+      saveSettings();
+      if (!running && mode === 'focus') { totalSeconds = v * 60; secondsLeft = totalSeconds; updateDisplay(); }
+    });
+
+    breakInput.addEventListener('change', () => {
+      const v = Math.max(1, parseInt(breakInput.value) || 5);
+      settings.breakMinutes = v;
+      breakInput.value = v;
+      saveSettings();
+      if (!running && mode === 'break') { totalSeconds = v * 60; secondsLeft = totalSeconds; updateDisplay(); }
+    });
+
+    longBreakInput.addEventListener('change', () => {
+      const v = Math.max(1, parseInt(longBreakInput.value) || 15);
+      settings.longBreakMinutes = v;
+      longBreakInput.value = v;
+      saveSettings();
+      if (!running && mode === 'longbreak') { totalSeconds = v * 60; secondsLeft = totalSeconds; updateDisplay(); }
+    });
+
+    intervalInput.addEventListener('change', () => {
+      const v = Math.max(2, parseInt(intervalInput.value) || 4);
+      settings.longBreakInterval = v;
+      intervalInput.value = v;
+      saveSettings();
+      updateDisplay();
+    });
+
+    updateDisplay();
+  })();
+
+  /* ============================================================
+     HABIT TRACKER
+     ============================================================ */
+  (function () {
+    const STORAGE_KEY = 'college-toolkit:habits';
+    let habits = loadJSON(STORAGE_KEY, []); // { id, name, checks: { 'YYYY-MM-DD': true } }
+    let nextId = habits.reduce((max, h) => Math.max(max, h.id), 0) + 1;
+
+    function save() { saveJSON(STORAGE_KEY, habits); }
+
+    const nameInput = document.getElementById('habit-name');
+    const addBtn = document.getElementById('habit-add-btn');
+    const prevBtn = document.getElementById('habit-prev-week');
+    const nextBtn = document.getElementById('habit-next-week');
+    const todayBtn = document.getElementById('habit-today-btn');
+    const weekLabelEl = document.getElementById('habit-week-label');
+    const headerEl = document.getElementById('habit-grid-header');
+    const listEl = document.getElementById('habit-list');
+
+    const DAY_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+    function mondayOf(d) {
+      const date = new Date(d);
+      const diff = (date.getDay() + 6) % 7;
+      date.setDate(date.getDate() - diff);
+      date.setHours(0, 0, 0, 0);
+      return date;
+    }
+
+    let viewWeekStart = mondayOf(new Date());
+
+    function weekDates() {
+      const dates = [];
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(viewWeekStart);
+        d.setDate(d.getDate() + i);
+        dates.push(d);
+      }
+      return dates;
+    }
+
+    function addHabit() {
+      const name = nameInput.value.trim();
+      if (!name) return;
+      habits.push({ id: nextId++, name, checks: {} });
+      save();
+      nameInput.value = '';
+      nameInput.focus();
+      render();
+    }
+
+    function toggleCheck(habitId, dateIso) {
+      const habit = habits.find(h => h.id === habitId);
+      if (!habit) return;
+      if (habit.checks[dateIso]) delete habit.checks[dateIso];
+      else habit.checks[dateIso] = true;
+      save();
+      render();
+    }
+
+    function deleteHabit(id) {
+      habits = habits.filter(h => h.id !== id);
+      save();
+      render();
+    }
+
+    function render() {
+      const dates = weekDates();
+      const todayIso = todayISO();
+      const rangeLabel = `${dates[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${dates[6].toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+      weekLabelEl.textContent = rangeLabel;
+
+      headerEl.innerHTML = '<span></span>' + dates.map((d, i) => {
+        const iso = isoOfDate(d);
+        const isToday = iso === todayIso;
+        return `<span style="${isToday ? 'color:var(--accent);' : ''}">${DAY_LETTERS[i]}</span>`;
+      }).join('') + '<span></span>';
+
+      listEl.innerHTML = '';
+      if (habits.length === 0) {
+        listEl.innerHTML = '<div class="empty-state">Add a habit to start tracking</div>';
+        return;
+      }
+
+      habits.forEach(habit => {
+        const row = document.createElement('div');
+        row.className = 'habit-row';
+        const streak = currentStreak(habit.checks);
+        const cells = dates.map(d => {
+          const iso = isoOfDate(d);
+          const checked = !!habit.checks[iso];
+          const isToday = iso === todayIso;
+          return `<button class="habit-check ${checked ? 'checked' : ''} ${isToday ? 'is-today' : ''}" data-habit="${habit.id}" data-date="${iso}" aria-label="${habit.name} on ${iso}"></button>`;
+        }).join('');
+        row.innerHTML = `<span class="habit-name">${habit.name}${streak > 0 ? ` <span class="streak-badge">🔥${streak}</span>` : ''}</span>${cells}<button class="icon-btn" data-delete="${habit.id}" title="Delete habit" aria-label="Delete ${habit.name}">🗑</button>`;
+        listEl.appendChild(row);
+      });
+    }
+
+    addBtn.addEventListener('click', addHabit);
+    nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') addHabit(); });
+
+    prevBtn.addEventListener('click', () => { viewWeekStart.setDate(viewWeekStart.getDate() - 7); render(); });
+    nextBtn.addEventListener('click', () => { viewWeekStart.setDate(viewWeekStart.getDate() + 7); render(); });
+    todayBtn.addEventListener('click', () => { viewWeekStart = mondayOf(new Date()); render(); });
+
+    listEl.addEventListener('click', e => {
+      const check = e.target.closest('.habit-check');
+      if (check) { toggleCheck(Number(check.dataset.habit), check.dataset.date); return; }
+      const del = e.target.closest('[data-delete]');
+      if (del) deleteHabit(Number(del.dataset.delete));
+    });
+
+    render();
+  })();
+
+  /* ============================================================
+     DASHBOARD
+     ============================================================ */
+  (function () {
+    const statsEl = document.getElementById('dash-stats');
+    const exportBtn = document.getElementById('backup-export-btn');
+    const importBtn = document.getElementById('backup-import-btn');
+    const fileInput = document.getElementById('backup-file-input');
+
+    const BACKUP_KEYS = [
+      'college-toolkit:expenses',
+      'college-toolkit:expense-budget',
+      'college-toolkit:todos',
+      'college-toolkit:schedule',
+      'college-toolkit:gpa',
+      'college-toolkit:timer-settings',
+      'college-toolkit:timer-sessions',
+      'college-toolkit:habits',
+      'college-toolkit:theme'
+    ];
+
+    function renderStats() {
+      const expenses = loadJSON('college-toolkit:expenses', []);
+      const budget = loadJSON('college-toolkit:expense-budget', null);
+      const todos = loadJSON('college-toolkit:todos', []);
+      const classes = loadJSON('college-toolkit:schedule', []);
+      const courses = loadJSON('college-toolkit:gpa', []);
+      const sessions = loadJSON('college-toolkit:timer-sessions', { date: todayISO(), count: 0 });
+      const habits = loadJSON('college-toolkit:habits', []);
+
+      const todayIso = todayISO();
+      const monthKey = todayIso.slice(0, 7);
+      const monthSpend = expenses.filter(e => e.date.slice(0, 7) === monthKey).reduce((s, e) => s + e.amount, 0);
+
+      const activeTasks = todos.filter(t => !t.done);
+      const overdueTasks = activeTasks.filter(t => t.dueDate && t.dueDate < todayIso);
+
+      const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      const todayCode = DAYS[(new Date().getDay() + 6) % 7];
+      const todaysClasses = classes.filter(c => c.day === todayCode).sort((a, b) => a.start.localeCompare(b.start));
+      const now = new Date();
+      const nowMinutes = now.getHours() * 60 + now.getMinutes();
+      const nextClass = todaysClasses.find(c => {
+        const [h, m] = c.start.split(':').map(Number);
+        return h * 60 + m >= nowMinutes;
+      });
+
+      const totalCredits = courses.reduce((s, c) => s + c.credits, 0);
+      const totalPoints = courses.reduce((s, c) => s + c.credits * GRADE_POINTS[c.grade], 0);
+      const gpa = totalCredits > 0 ? totalPoints / totalCredits : null;
+
+      const sessionsToday = sessions.date === todayIso ? sessions.count : 0;
+      const bestStreak = habits.reduce((max, h) => Math.max(max, currentStreak(h.checks || {})), 0);
+
+      const cards = [
+        {
+          icon: '💰', label: 'This Month',
+          value: '$' + monthSpend.toFixed(2),
+          caption: budget ? `of $${budget.toFixed(2)} budget` : 'No budget set',
+          captionClass: budget && monthSpend > budget ? 'bad' : ''
+        },
+        {
+          icon: '✅', label: 'Tasks',
+          value: String(activeTasks.length),
+          caption: overdueTasks.length ? `${overdueTasks.length} overdue` : 'active',
+          captionClass: overdueTasks.length ? 'bad' : ''
+        },
+        {
+          icon: '📅', label: 'Today',
+          value: nextClass ? nextClass.name : (todaysClasses.length ? 'Done for today' : 'No classes'),
+          caption: nextClass ? `at ${formatTime12h(nextClass.start)}` : ' ',
+          captionClass: ''
+        },
+        {
+          icon: '🎯', label: 'GPA',
+          value: gpa !== null ? gpa.toFixed(2) : '—',
+          caption: totalCredits ? `${totalCredits} credits` : 'No courses yet',
+          captionClass: ''
+        },
+        {
+          icon: '⏱️', label: 'Focus Today',
+          value: String(sessionsToday),
+          caption: sessionsToday === 1 ? 'session' : 'sessions',
+          captionClass: ''
+        },
+        {
+          icon: '🔥', label: 'Best Streak',
+          value: String(bestStreak),
+          caption: bestStreak === 1 ? 'day' : 'days',
+          captionClass: bestStreak > 0 ? 'good' : ''
+        }
+      ];
+
+      statsEl.innerHTML = cards.map(c => `
+        <div class="stat-card">
+          <div class="stat-icon">${c.icon}</div>
+          <div class="stat-label">${c.label}</div>
+          <div class="stat-value">${c.value}</div>
+          <div class="stat-caption ${c.captionClass}">${c.caption}</div>
+        </div>
+      `).join('');
+    }
+
+    function exportBackup() {
+      const data = {};
+      BACKUP_KEYS.forEach(key => {
+        const raw = localStorage.getItem(key);
+        if (raw !== null) data[key] = raw;
+      });
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `college-toolkit-backup-${todayISO()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function importBackup(file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const data = JSON.parse(reader.result);
+          const keys = Object.keys(data).filter(k => k.startsWith('college-toolkit:'));
+          if (!keys.length) { alert("This file doesn't look like a College Toolkit backup."); return; }
+          if (!confirm(`Import ${keys.length} saved item(s)? This will overwrite your current data in this browser.`)) return;
+          keys.forEach(key => localStorage.setItem(key, data[key]));
+          alert('Backup restored! The page will now reload.');
+          location.reload();
+        } catch (err) {
+          alert("Could not read that file — make sure it's a College Toolkit backup JSON file.");
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    exportBtn.addEventListener('click', exportBackup);
+    importBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files[0]) importBackup(fileInput.files[0]);
+      fileInput.value = '';
+    });
+
+    dashboardRefresh = renderStats;
+    renderStats();
+  })();
+
+  showPanel(location.hash.slice(1) || 'dashboard');
+</script>
+
+</body>
+</html>
