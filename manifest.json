@@ -1,7 +1,8 @@
 {
   "name": "Weihan's AI Tools — College Toolkit",
   "short_name": "AI Tools",
-  "description": "Expenses, to-do, schedule, GPA, timer, and habits for college life.",
+  "description": "Canvas sync, expenses, to-do, schedule, GPA, assignments, timer, habits, wellness, and more — everything for college life.",
+  "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

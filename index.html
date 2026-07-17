@@ -686,7 +686,7 @@
 
           <div class="card">
             <h2 class="section-title">Notifications</h2>
-            <p class="backup-note" id="notif-note">Get an alert when a task is due today or a class is starting soon. Only checked while this tab is open.</p>
+            <p class="backup-note" id="notif-note">Alerts for assignments &amp; tasks due today and classes starting soon, while the app is open. On iPhone: open this site in Safari, tap Share → <strong>Add to Home Screen</strong>, then enable here (iOS 16.4+). Closed-app push isn't possible without a server yet.</p>
             <button id="notif-toggle-btn" class="field-full btn-secondary">🔔 Enable Notifications</button>
           </div>
 
@@ -3095,13 +3095,27 @@
 
   /* ============================================================
      NOTIFICATIONS
-     Due tasks and soon-to-start classes, checked only while this tab is open —
-     there's no server here to push notifications when the app is closed.
+     Displayed through the service worker (required on Android PWAs, and works
+     while the tab is backgrounded). Checks run while the app is open — the web
+     platform has no way to fire scheduled notifications from a closed app
+     without a push server, so that upgrade waits until we have a backend.
      ============================================================ */
   (function () {
     const NOTIFIED_KEY = 'college-toolkit:notified-today';
     const btn = document.getElementById('notif-toggle-btn');
     const note = document.getElementById('notif-note');
+
+    // Prefer showNotification via the service worker registration; fall back to
+    // the plain Notification constructor where no SW is available (file:// use).
+    function deliver(title, body, tag) {
+      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.ready.then(reg => reg.showNotification(title, {
+          body, tag, icon: 'icon-192.png', badge: 'icon-192.png'
+        })).catch(() => { try { new Notification(title, { body, icon: 'icon-192.png' }); } catch (e) { /* give up quietly */ } });
+      } else {
+        try { new Notification(title, { body, icon: 'icon-192.png' }); } catch (e) { /* give up quietly */ }
+      }
+    }
 
     function updateButton() {
       if (typeof Notification === 'undefined') {
@@ -3139,7 +3153,16 @@
       todos.filter(t => !t.done && t.dueDate === todayIso).forEach(t => {
         const key = 'task-' + t.id;
         if (!alreadyNotified(key)) {
-          new Notification('Due today', { body: t.text, icon: 'icon-192.png' });
+          deliver('Due today', t.text, key);
+          markNotified(key);
+        }
+      });
+
+      const assignments = loadJSON('college-toolkit:assignments', []);
+      assignments.filter(a => a.pointsEarned === null && a.dueDate === todayIso).forEach(a => {
+        const key = 'assignment-' + (a.canvasUid || a.id);
+        if (!alreadyNotified(key)) {
+          deliver('Assignment due today', a.title + (a.dueTime ? ` at ${formatTime12h(a.dueTime)}` : ''), key);
           markNotified(key);
         }
       });
@@ -3154,7 +3177,7 @@
         const startMinutes = h * 60 + m;
         const key = `class-${c.id}-${todayIso}`;
         if (startMinutes - nowMinutes <= 15 && startMinutes - nowMinutes >= 0 && !alreadyNotified(key)) {
-          new Notification('Class starting soon', { body: `${c.name} at ${formatTime12h(c.start)}`, icon: 'icon-192.png' });
+          deliver('Class starting soon', `${c.name} at ${formatTime12h(c.start)}`, key);
           markNotified(key);
         }
       });
@@ -3165,14 +3188,17 @@
       const permission = await Notification.requestPermission();
       updateButton();
       if (permission === 'granted') {
-        new Notification("Weihan's AI Tools", { body: "You'll get alerts for tasks due today and classes starting soon.", icon: 'icon-192.png' });
+        deliver("Weihan's AI Tools", "You'll get alerts for assignments and tasks due today, and classes starting soon.");
         checkReminders();
       }
     });
 
     updateButton();
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted') checkReminders();
-    setInterval(checkReminders, 5 * 60 * 1000);
+    setInterval(checkReminders, 60 * 1000);
+    // Re-check the moment the user comes back to the app — on phones the interval
+    // is frozen while the app is backgrounded, so this is the wake-up path.
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) checkReminders(); });
   })();
 
   /* ============================================================
