@@ -565,6 +565,15 @@
   .cmdk-hint { padding: 10px 16px; border-top: 1px solid var(--hairline); font-size: 11px; color: var(--muted); }
   .cmdk-hint kbd { font-family: var(--font-mono); background: var(--wash); border-radius: 4px; padding: 1px 5px; }
 
+  .cmdk-preview { padding: 14px 16px; border-top: 1px solid var(--hairline); }
+  .cmdk-preview-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+  .cmdk-preview-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+  .cmdk-preview-warn { font-size: 11px; font-weight: 600; color: var(--warn); }
+  .cmdk-preview .field-row { margin-bottom: 12px; }
+  .cmdk-preview input, .cmdk-preview select { font-size: 14px; padding: 8px 10px; }
+  .cmdk-preview-actions { display: flex; gap: 8px; }
+  .cmdk-preview-actions button { flex: 1; }
+
   .emoji-select { display: flex; gap: 6px; }
   .emoji-select button { flex: 1; background: var(--wash); color: var(--muted); font-size: 18px; font-weight: 700; padding: 10px 0; border-radius: 8px; }
   .emoji-select button:hover { background: var(--accent-wash); }
@@ -682,6 +691,16 @@
               Allow public proxy fallback if direct fetch is blocked (proxy can see the feed)
             </label>
             <p class="backup-note" id="canvas-status" style="margin:0;">Not synced yet.</p>
+          </div>
+
+          <div class="card">
+            <h2 class="section-title">AI Quick Capture</h2>
+            <p class="backup-note">Press <strong>⌘K</strong> and type things like “coffee 6.50” or “econ midterm next thursday 2pm” — they land in the right tab automatically. Built-in parsing is free; adding a Claude API key makes it smarter. The key stays in this browser only and is <strong>never</strong> included in backups.</p>
+            <div class="field-row" style="margin-bottom:0;">
+              <input id="ai-key-input" type="password" placeholder="Claude API key (optional) — sk-ant-…" class="field-full" autocomplete="off">
+              <button id="ai-key-save-btn" class="field-full btn-secondary">Save Key</button>
+            </div>
+            <p class="backup-note" id="ai-key-status" style="margin:8px 0 0;"></p>
           </div>
 
           <div class="card">
@@ -1041,9 +1060,10 @@
 
   <div class="cmdk-overlay" id="cmdk-overlay" hidden>
     <div class="cmdk-modal">
-      <input type="text" id="cmdk-input" class="cmdk-input" placeholder="Jump to a tool or action…" autocomplete="off">
+      <input type="text" id="cmdk-input" class="cmdk-input" placeholder="Search, or type “coffee 6.50”…" autocomplete="off">
       <div class="cmdk-list" id="cmdk-list"></div>
-      <div class="cmdk-hint"><kbd>↑</kbd> <kbd>↓</kbd> to navigate · <kbd>Enter</kbd> to select · <kbd>Esc</kbd> to close</div>
+      <div class="cmdk-preview" id="cmdk-preview" hidden></div>
+      <div class="cmdk-hint"><kbd>↑</kbd> <kbd>↓</kbd> navigate · <kbd>Enter</kbd> select · <kbd>Esc</kbd> close · try “gym streak done”</div>
     </div>
   </div>
 
@@ -1474,6 +1494,19 @@
       if (btn) removeExpense(Number(btn.dataset.id));
     });
 
+    Toolkit.expenses = {
+      add({ name, amount, category, date }) {
+        const cat = CATEGORIES[category] ? category : 'other';
+        const when = date || todayISO();
+        expenses.push({ id: nextId++, name, amount, category: cat, date: when });
+        save();
+        const added = parseISODate(when);
+        viewYear = added.getFullYear();
+        viewMonthIndex = added.getMonth();
+        render();
+      }
+    };
+
     render();
   })();
 
@@ -1602,6 +1635,14 @@
       const del = e.target.closest('.icon-btn');
       if (del) deleteTodo(Number(del.dataset.id));
     });
+
+    Toolkit.todos = {
+      add({ text, dueDate, priority }) {
+        todos.push({ id: nextId++, text, done: false, dueDate: dueDate || null, priority: PRIORITIES[priority] ? priority : 'medium' });
+        save();
+        render();
+      }
+    };
 
     render();
   })();
@@ -2162,6 +2203,16 @@
       if (del) deleteHabit(Number(del.dataset.delete));
     });
 
+    Toolkit.habits = {
+      list() { return habits.map(h => ({ id: h.id, name: h.name })); },
+      checkToday(id) {
+        const habit = habits.find(h => h.id === id);
+        if (!habit) return false;
+        if (!habit.checks[todayISO()]) { habit.checks[todayISO()] = true; save(); render(); }
+        return true;
+      }
+    };
+
     render();
   })();
 
@@ -2327,6 +2378,11 @@
       replaceCanvas(items) {
         assignments = assignments.filter(a => !a.canvas);
         items.forEach(item => assignments.push({ ...item, id: nextId++, canvas: true }));
+        save();
+        render();
+      },
+      addManual({ courseId, title, dueDate, dueTime, pointsPossible }) {
+        assignments.push({ id: nextId++, courseId: Number(courseId), title, dueDate: dueDate || null, dueTime: dueTime || null, pointsPossible: pointsPossible || 100, pointsEarned: null });
         save();
         render();
       }
@@ -3202,6 +3258,42 @@
   })();
 
   /* ============================================================
+     AI SETTINGS
+     The Claude API key lives only in this browser's localStorage. It is
+     deliberately NOT in BACKUP_KEYS: backup files get shared and forgotten,
+     and a live API key should never travel inside one.
+     ============================================================ */
+  (function () {
+    const AI_KEY = 'college-toolkit:anthropic-key';
+    const keyInput = document.getElementById('ai-key-input');
+    const saveBtn = document.getElementById('ai-key-save-btn');
+    const statusEl = document.getElementById('ai-key-status');
+
+    function refresh() {
+      const stored = localStorage.getItem(AI_KEY);
+      statusEl.textContent = stored
+        ? `Key saved (…${stored.slice(-4)}). Quick capture will use Claude.`
+        : 'No key saved — quick capture uses built-in pattern matching.';
+    }
+
+    saveBtn.addEventListener('click', () => {
+      const v = keyInput.value.trim();
+      if (!v) {
+        localStorage.removeItem(AI_KEY);
+        showSavedToast();
+      } else {
+        if (!v.startsWith('sk-ant-')) { statusEl.textContent = "That doesn't look like a Claude API key (should start with sk-ant-)."; return; }
+        localStorage.setItem(AI_KEY, v);
+        showSavedToast();
+      }
+      keyInput.value = '';
+      refresh();
+    });
+
+    refresh();
+  })();
+
+  /* ============================================================
      COMMAND PALETTE + KEYBOARD SHORTCUTS
      ============================================================ */
   (function () {
@@ -3239,6 +3331,258 @@
       { label: 'Start focus timer', icon: '▶️', action: () => { showPanel('timer'); document.getElementById('timer-start-btn').click(); } },
     ];
 
+    /* ---------- Natural-language quick capture ---------- */
+    const previewEl = document.getElementById('cmdk-preview');
+    const AI_KEY = 'college-toolkit:anthropic-key';
+    const EXP_CATEGORIES = ['food', 'transport', 'fun', 'other'];
+
+    const WEEKDAY_MAP = { sun: 0, sunday: 0, mon: 1, monday: 1, tue: 2, tues: 2, tuesday: 2, wed: 3, wednesday: 3, thu: 4, thur: 4, thurs: 4, thursday: 4, fri: 5, friday: 5, sat: 6, saturday: 6 };
+    const MONTH_MAP = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+
+    function parseNaturalDate(lower) {
+      const today = new Date();
+      if (/(^|\s)(today|tonight)(\s|$)/.test(lower)) return { date: todayISO(), matched: /tonight/.test(lower) ? 'tonight' : 'today' };
+      if (/(^|\s)tomorrow(\s|$)/.test(lower)) { const d = new Date(today); d.setDate(d.getDate() + 1); return { date: isoOfDate(d), matched: 'tomorrow' }; }
+      let m = lower.match(/\b(next\s+)?(sunday|monday|tuesday|wednesday|thursday|friday|saturday|sun|mon|tues|tue|wed|thurs|thur|thu|fri|sat)\b/);
+      if (m) {
+        const d = new Date(today);
+        let diff = (WEEKDAY_MAP[m[2]] - d.getDay() + 7) % 7;
+        if (diff === 0) diff = 7; // a bare weekday always means the upcoming one
+        d.setDate(d.getDate() + diff);
+        return { date: isoOfDate(d), matched: m[0] };
+      }
+      m = lower.match(/\b(\d{1,2})[\/](\d{1,2})\b/);
+      if (m) {
+        const d = new Date(today.getFullYear(), +m[1] - 1, +m[2]);
+        if (d < new Date(today.getFullYear(), today.getMonth(), today.getDate())) d.setFullYear(d.getFullYear() + 1);
+        return { date: isoOfDate(d), matched: m[0] };
+      }
+      m = lower.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})\b/);
+      if (m) {
+        const d = new Date(today.getFullYear(), MONTH_MAP[m[1]], +m[2]);
+        if (d < new Date(today.getFullYear(), today.getMonth(), today.getDate())) d.setFullYear(d.getFullYear() + 1);
+        return { date: isoOfDate(d), matched: m[0] };
+      }
+      return null;
+    }
+
+    function parseNaturalTime(lower) {
+      let m = lower.match(/\b(\d{1,2}):(\d{2})\s*(am|pm)?\b/);
+      if (!m) { m = lower.match(/\b(\d{1,2})\s*(am|pm)\b/); if (m) m = [m[0], m[1], '00', m[2]]; }
+      if (!m) return null;
+      let h = +m[1];
+      const min = +m[2];
+      if (m[3] === 'pm' && h < 12) h += 12;
+      if (m[3] === 'am' && h === 12) h = 0;
+      if (h > 23 || min > 59) return null;
+      return { time: `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`, matched: m[0] };
+    }
+
+    function heuristicParse(raw) {
+      const text = raw.trim().replace(/\s+/g, ' ');
+      const lower = text.toLowerCase();
+
+      const habitHit = Toolkit.habits.list().find(h => lower.includes(h.name.toLowerCase()));
+      if (habitHit && /\b(done|did|check(ed)?|complete(d)?|streak|✓)\b/.test(lower)) {
+        return { type: 'habit', confidence: 0.9, fields: { habitId: habitHit.id } };
+      }
+
+      const dateHit = parseNaturalDate(lower);
+      const timeHit = parseNaturalTime(lower);
+
+      const amountMatch = text.match(/^(.+?)\s+\$?(\d+(?:\.\d{1,2})?)\s*$/);
+      if (amountMatch && !dateHit && !timeHit) {
+        const name = amountMatch[1].trim();
+        const category =
+          /coffee|boba|lunch|dinner|breakfast|food|pizza|snack|grocer|restaurant/i.test(name) ? 'food'
+          : /bus|uber|lyft|gas|train|parking|flight/i.test(name) ? 'transport'
+          : /movie|game|concert|party|ticket/i.test(name) ? 'fun' : 'other';
+        return { type: 'expense', confidence: text.includes('$') ? 0.9 : 0.75, fields: { name, amount: parseFloat(amountMatch[2]), category, date: todayISO() } };
+      }
+
+      let title = text;
+      if (dateHit) title = title.replace(new RegExp(dateHit.matched.replace(/[/\\]/g, '\\$&'), 'i'), ' ');
+      if (timeHit) title = title.replace(timeHit.matched, ' ');
+      title = title.replace(/\b(due|by|on|at|next)\b/gi, ' ').replace(/\s+/g, ' ').trim();
+      if (!title) title = text;
+
+      const courses = loadJSON('college-toolkit:gpa', []);
+      const courseHit = courses.find(c =>
+        c.name.toLowerCase().split(/[^a-z0-9]+/).some(w => w.length > 2 && lower.includes(w)));
+      const looksAcademic = /\b(midterm|final|exam|quiz|essay|paper|homework|hw|assignment|project|lab|reading|chapter)\b/i.test(lower);
+
+      if (courseHit && looksAcademic) {
+        return { type: 'assignment', confidence: dateHit ? 0.8 : 0.65, fields: { title, courseId: courseHit.id, dueDate: dateHit ? dateHit.date : null, dueTime: timeHit ? timeHit.time : null, pointsPossible: 100 } };
+      }
+      return { type: 'todo', confidence: dateHit ? 0.75 : 0.45, fields: { text: title, dueDate: dateHit ? dateHit.date : null, priority: 'medium' } };
+    }
+
+    async function aiParse(raw) {
+      const key = localStorage.getItem(AI_KEY);
+      if (!key) return null;
+      const courses = loadJSON('college-toolkit:gpa', []).map(c => ({ id: c.id, name: c.name }));
+      const habits = Toolkit.habits.list();
+      const today = new Date();
+      const system = `Convert a college student's quick note into strict JSON. Today is ${todayISO()} (${today.toLocaleDateString('en-US', { weekday: 'long' })}).
+Types and their fields:
+- expense: {"name": string, "amount": number, "category": "food"|"transport"|"fun"|"other", "date": "YYYY-MM-DD"}
+- todo: {"text": string, "dueDate": "YYYY-MM-DD" or null, "priority": "high"|"medium"|"low"}
+- assignment: {"title": string, "courseId": number (MUST be from the course list), "dueDate": "YYYY-MM-DD" or null, "dueTime": "HH:MM" or null, "pointsPossible": number}
+- habit: {"habitId": number (MUST be from the habit list)}
+Courses: ${JSON.stringify(courses)}
+Habits: ${JSON.stringify(habits)}
+Use "assignment" only if a listed course clearly matches; otherwise prefer "todo". Use "habit" only if a listed habit clearly matches.
+Reply with ONLY this JSON, no prose: {"type": "...", "confidence": 0.0-1.0, "fields": {...}}`;
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      try {
+        const res = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          signal: controller.signal,
+          headers: {
+            'content-type': 'application/json',
+            'x-api-key': key,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true'
+          },
+          body: JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 300, system, messages: [{ role: 'user', content: raw }] })
+        });
+        if (!res.ok) throw new Error('API error ' + res.status);
+        const data = await res.json();
+        const match = (data.content?.[0]?.text || '').match(/\{[\s\S]*\}/);
+        if (!match) throw new Error('No JSON in reply');
+        const parsed = JSON.parse(match[0]);
+        if (!['expense', 'todo', 'assignment', 'habit'].includes(parsed.type) || !parsed.fields) throw new Error('Bad shape');
+        parsed.confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0.7;
+        return parsed;
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    function previewFieldsHTML(type, f) {
+      const courses = loadJSON('college-toolkit:gpa', []);
+      if (type === 'expense') return `
+        <div class="field-row">
+          <input id="cap-name" class="field-full" type="text" placeholder="Name" value="${(f.name || '').replace(/"/g, '&quot;')}">
+          <input id="cap-amount" class="field-half" type="number" step="0.01" placeholder="Amount" value="${f.amount ?? ''}">
+          <select id="cap-category" class="field-half">${EXP_CATEGORIES.map(c => `<option ${c === f.category ? 'selected' : ''}>${c}</option>`).join('')}</select>
+          <input id="cap-date" class="field-full" type="date" value="${f.date || todayISO()}">
+        </div>`;
+      if (type === 'todo') return `
+        <div class="field-row">
+          <input id="cap-text" class="field-full" type="text" placeholder="Task" value="${(f.text || '').replace(/"/g, '&quot;')}">
+          <input id="cap-due" class="field-half" type="date" value="${f.dueDate || ''}">
+          <select id="cap-priority" class="field-half">${['high', 'medium', 'low'].map(p => `<option ${p === (f.priority || 'medium') ? 'selected' : ''}>${p}</option>`).join('')}</select>
+        </div>`;
+      if (type === 'assignment') return `
+        <div class="field-row">
+          <input id="cap-title" class="field-full" type="text" placeholder="Assignment" value="${(f.title || '').replace(/"/g, '&quot;')}">
+          <select id="cap-course" class="field-full">${courses.map(c => `<option value="${c.id}" ${c.id === f.courseId ? 'selected' : ''}>${c.name}</option>`).join('')}</select>
+          <input id="cap-due" class="field-half" type="date" value="${f.dueDate || ''}">
+          <input id="cap-time" class="field-half" type="time" value="${f.dueTime || ''}">
+          <input id="cap-points" class="field-full" type="number" placeholder="Points possible" value="${f.pointsPossible ?? 100}">
+        </div>`;
+      const habits = Toolkit.habits.list();
+      return `
+        <div class="field-row">
+          <select id="cap-habit" class="field-full">${habits.map(h => `<option value="${h.id}" ${h.id === f.habitId ? 'selected' : ''}>${h.name}</option>`).join('')}</select>
+        </div>
+        <p class="backup-note" style="margin:0 0 12px;">Will check this habit off for today.</p>`;
+    }
+
+    let currentParse = null;
+
+    function renderPreview(parsed, via) {
+      currentParse = parsed;
+      const courses = loadJSON('college-toolkit:gpa', []);
+      const habits = Toolkit.habits.list();
+      const allowedTypes = ['expense', 'todo'];
+      if (courses.length) allowedTypes.push('assignment');
+      if (habits.length) allowedTypes.push('habit');
+      if (!allowedTypes.includes(parsed.type)) parsed.type = 'todo';
+
+      listEl.hidden = true;
+      previewEl.hidden = false;
+      previewEl.innerHTML = `
+        <div class="cmdk-preview-head">
+          <span class="cmdk-preview-title">Add to
+            <select id="cap-type" style="font-size:12px; padding:4px 6px; margin-left:4px;">
+              ${allowedTypes.map(t => `<option ${t === parsed.type ? 'selected' : ''}>${t}</option>`).join('')}
+            </select>
+          </span>
+          <span class="${parsed.confidence < 0.6 ? 'cmdk-preview-warn' : 'cmdk-preview-title'}">
+            ${parsed.confidence < 0.6 ? '⚠ not sure — check fields' : 'via ' + via}
+          </span>
+        </div>
+        <div id="cap-fields">${previewFieldsHTML(parsed.type, parsed.fields)}</div>
+        <div class="cmdk-preview-actions">
+          <button id="cap-save">Save</button>
+          <button id="cap-back" class="btn-secondary">Back</button>
+        </div>`;
+
+      previewEl.querySelector('#cap-type').addEventListener('change', e => {
+        parsed.type = e.target.value;
+        previewEl.querySelector('#cap-fields').innerHTML = previewFieldsHTML(parsed.type, parsed.fields);
+      });
+      previewEl.querySelector('#cap-save').addEventListener('click', saveCapture);
+      previewEl.querySelector('#cap-back').addEventListener('click', backToList);
+      previewEl.querySelectorAll('input, select').forEach(el => {
+        el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveCapture(); } });
+      });
+      const first = previewEl.querySelector('input, select');
+      if (first) first.focus();
+    }
+
+    function backToList() {
+      previewEl.hidden = true;
+      listEl.hidden = false;
+      input.focus();
+    }
+
+    function val(id) { const el = previewEl.querySelector('#' + id); return el ? el.value : ''; }
+
+    function saveCapture() {
+      const type = val('cap-type');
+      if (type === 'expense') {
+        const amount = parseFloat(val('cap-amount'));
+        if (!val('cap-name').trim() || isNaN(amount) || amount <= 0) return;
+        Toolkit.expenses.add({ name: val('cap-name').trim(), amount, category: val('cap-category'), date: val('cap-date') });
+        closePalette(); showPanel('expenses'); return;
+      }
+      if (type === 'todo') {
+        if (!val('cap-text').trim()) return;
+        Toolkit.todos.add({ text: val('cap-text').trim(), dueDate: val('cap-due') || null, priority: val('cap-priority') });
+        closePalette(); showPanel('todo'); return;
+      }
+      if (type === 'assignment') {
+        if (!val('cap-title').trim() || !val('cap-course')) return;
+        Toolkit.assignments.addManual({ courseId: val('cap-course'), title: val('cap-title').trim(), dueDate: val('cap-due') || null, dueTime: val('cap-time') || null, pointsPossible: parseFloat(val('cap-points')) || 100 });
+        closePalette(); showPanel('assignments'); return;
+      }
+      if (type === 'habit') {
+        Toolkit.habits.checkToday(Number(val('cap-habit')));
+        closePalette(); showPanel('habits');
+      }
+    }
+
+    async function runCapture(text) {
+      listEl.hidden = true;
+      previewEl.hidden = false;
+      previewEl.innerHTML = '<div class="cmdk-empty">Thinking…</div>';
+      let via = 'patterns';
+      let parsed = null;
+      try {
+        parsed = await aiParse(text);
+        if (parsed) via = 'Claude';
+      } catch (err) {
+        parsed = null; // API problem — patterns still work
+      }
+      if (!parsed) parsed = heuristicParse(text);
+      renderPreview(parsed, via);
+    }
+
     let filtered = COMMANDS;
     let activeIndex = 0;
 
@@ -3257,6 +3601,8 @@
 
     function openPalette() {
       overlay.hidden = false;
+      previewEl.hidden = true;
+      listEl.hidden = false;
       input.value = '';
       filtered = COMMANDS;
       activeIndex = 0;
@@ -3271,13 +3617,19 @@
     function runActive() {
       const cmd = filtered[activeIndex];
       if (!cmd) return;
+      if (cmd.capture) { runCapture(input.value.trim()); return; }
       closePalette();
       cmd.action();
     }
 
     input.addEventListener('input', () => {
-      const q = input.value.trim().toLowerCase();
-      filtered = q ? COMMANDS.filter(c => c.label.toLowerCase().includes(q)) : COMMANDS;
+      if (!previewEl.hidden) backToList();
+      const q = input.value.trim();
+      const matches = q ? COMMANDS.filter(c => c.label.toLowerCase().includes(q.toLowerCase())) : COMMANDS.slice();
+      // Any non-empty text can also be captured as a new item — the row sits after
+      // command matches, or first when nothing else matched.
+      if (q) matches.push({ label: `Add “${q}”`, icon: '✨', capture: true });
+      filtered = matches;
       activeIndex = 0;
       renderList();
     });
