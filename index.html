@@ -671,6 +671,20 @@
           <div class="stat-grid" id="dash-stats"></div>
 
           <div class="card">
+            <h2 class="section-title">Canvas Sync</h2>
+            <p class="backup-note">In Canvas, go to <strong>Calendar → Calendar Feed</strong>, copy the link, and paste it here. Your assignments and class times will fill in automatically. The feed URL contains a private token — treat it like a password.</p>
+            <div class="field-row" style="margin-bottom:10px;">
+              <input id="canvas-url" type="url" placeholder="https://canvas.wisc.edu/feeds/calendars/user_….ics" class="field-full">
+              <button id="canvas-sync-btn" class="field-full">Sync Now</button>
+            </div>
+            <label style="display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted); margin-bottom:8px;">
+              <input type="checkbox" id="canvas-proxy-ok" checked style="width:16px;height:16px;">
+              Allow public proxy fallback if direct fetch is blocked (proxy can see the feed)
+            </label>
+            <p class="backup-note" id="canvas-status" style="margin:0;">Not synced yet.</p>
+          </div>
+
+          <div class="card">
             <h2 class="section-title">Notifications</h2>
             <p class="backup-note" id="notif-note">Get an alert when a task is due today or a class is starting soon. Only checked while this tab is open.</p>
             <button id="notif-toggle-btn" class="field-full btn-secondary">🔔 Enable Notifications</button>
@@ -1133,6 +1147,11 @@
   }
 
   const GRADE_POINTS = { A: 4.0, 'A-': 3.7, 'B+': 3.3, B: 3.0, 'B-': 2.7, 'C+': 2.3, C: 2.0, 'C-': 1.7, 'D+': 1.3, D: 1.0, F: 0.0 };
+
+  // Cross-module registry: each tool is a sealed IIFE, so features that need to write
+  // into another tool (like Canvas sync populating Assignments) go through the one
+  // function that tool chooses to expose here, instead of reaching into its internals.
+  const Toolkit = {};
 
   /* ---------- Dark mode toggle ---------- */
   const themeToggleBtn = document.getElementById('theme-toggle-btn');
@@ -1641,6 +1660,7 @@
     function removeClass(id) {
       const index = classes.findIndex(c => c.id === id);
       if (index === -1) return;
+      if (classes[index].canvas) return; // Canvas items are read-only; re-sync manages them
       const removed = classes[index];
       classes = classes.filter(c => c.id !== id);
       save();
@@ -1673,6 +1693,7 @@
           const li = document.createElement('li');
           li.innerHTML = `
             <span class="row-info">
+              ${c.canvas ? '<span class="pill" style="background:var(--accent-wash); color:var(--accent);">Canvas</span>' : ''}
               <span class="row-details">
                 <span class="row-name">${c.name}</span>
                 ${c.location ? `<span class="row-meta">${c.location}</span>` : ''}
@@ -1680,7 +1701,7 @@
             </span>
             <span class="row-right">
               <span class="row-amount" style="font-size:12px; text-align:right;">${formatTime12h(c.start)} – ${formatTime12h(c.end)}</span>
-              <button class="icon-btn" data-id="${c.id}" title="Delete class" aria-label="Delete ${c.name}">🗑</button>
+              ${c.canvas ? '' : `<button class="icon-btn" data-id="${c.id}" title="Delete class" aria-label="Delete ${c.name}">🗑</button>`}
             </span>
           `;
           list.appendChild(li);
@@ -1693,6 +1714,15 @@
       const btn = e.target.closest('.icon-btn');
       if (btn) removeClass(Number(btn.dataset.id));
     });
+
+    Toolkit.schedule = {
+      replaceCanvas(items) {
+        classes = classes.filter(c => !c.canvas);
+        items.forEach(item => classes.push({ ...item, id: nextId++, canvas: true }));
+        save();
+        render();
+      }
+    };
 
     render();
   })();
@@ -2195,6 +2225,7 @@
     function removeAssignment(id) {
       const index = assignments.findIndex(a => a.id === id);
       if (index === -1) return;
+      if (assignments[index].canvas) return; // Canvas items are read-only; re-sync manages them
       const removed = assignments[index];
       assignments = assignments.filter(a => a.id !== id);
       save();
@@ -2208,7 +2239,7 @@
 
     function gradeAssignment(id) {
       const a = assignments.find(a => a.id === id);
-      if (!a) return;
+      if (!a || a.canvas) return;
       const input = prompt(`Score received (out of ${a.pointsPossible}):`, a.pointsEarned ?? '');
       if (input === null) return;
       const score = parseFloat(input);
@@ -2224,43 +2255,54 @@
       list.innerHTML = '';
 
       if (assignments.length === 0) {
-        list.innerHTML = '<li class="empty-state">No assignments yet — add one above</li>';
+        list.innerHTML = '<li class="empty-state">No assignments yet — add one above, or connect Canvas on the Dashboard</li>';
         return;
       }
 
-      const courseOrder = [];
-      assignments.forEach(a => { if (!courseOrder.includes(a.courseId)) courseOrder.push(a.courseId); });
+      // Manual assignments group by their GPA course id; Canvas ones carry their own
+      // course name, so the group key handles both without mixing them up.
+      const groupKeyOf = a => (a.canvas ? 'canvas:' + (a.courseName || 'Canvas') : 'course:' + a.courseId);
+      const groupOrder = [];
+      assignments.forEach(a => { const k = groupKeyOf(a); if (!groupOrder.includes(k)) groupOrder.push(k); });
 
-      courseOrder.forEach(courseId => {
-        const course = courses.find(c => c.id === courseId);
-        const courseAssignments = assignments
-          .filter(a => a.courseId === courseId)
+      groupOrder.forEach(groupKey => {
+        const groupAssignments = assignments
+          .filter(a => groupKeyOf(a) === groupKey)
           .sort((a, b) => (a.dueDate || '9999-99-99').localeCompare(b.dueDate || '9999-99-99'));
 
-        const graded = courseAssignments.filter(a => a.pointsEarned !== null);
+        const first = groupAssignments[0];
+        const course = first.canvas ? null : courses.find(c => c.id === first.courseId);
+        const groupLabel = first.canvas ? (first.courseName || 'Canvas') : (course ? course.name : 'Deleted course');
+
+        const graded = groupAssignments.filter(a => a.pointsEarned !== null);
         const earned = graded.reduce((s, a) => s + a.pointsEarned, 0);
         const possible = graded.reduce((s, a) => s + a.pointsPossible, 0);
         const gradeLabel = possible > 0 ? `${Math.round((earned / possible) * 100)}%` : '—';
 
         const header = document.createElement('li');
         header.className = 'group-header';
-        header.innerHTML = `<span>${course ? course.name : 'Deleted course'}</span><span>${gradeLabel}</span>`;
+        header.innerHTML = `<span>${groupLabel}</span><span>${gradeLabel}</span>`;
         list.appendChild(header);
 
-        courseAssignments.forEach(a => {
+        groupAssignments.forEach(a => {
           const isGraded = a.pointsEarned !== null;
+          const pointsLabel = a.pointsPossible != null
+            ? (isGraded ? `${a.pointsEarned}/${a.pointsPossible}` : `${a.pointsPossible} pts`)
+            : '';
           const li = document.createElement('li');
           li.innerHTML = `
             <span class="row-info">
+              ${a.canvas ? '<span class="pill" style="background:var(--accent-wash); color:var(--accent);">Canvas</span>' : ''}
               <span class="row-details">
                 <span class="row-name">${a.title}</span>
-                <span class="row-meta">${a.dueDate ? formatShortDate(a.dueDate) : 'No due date'}</span>
+                <span class="row-meta">${a.dueDate ? formatShortDate(a.dueDate) + (a.dueTime ? ' · ' + formatTime12h(a.dueTime) : '') : 'No due date'}</span>
               </span>
             </span>
             <span class="row-right">
-              <span class="row-amount" style="font-size:12px;">${isGraded ? `${a.pointsEarned}/${a.pointsPossible}` : `${a.pointsPossible} pts`}</span>
+              ${pointsLabel ? `<span class="row-amount" style="font-size:12px;">${pointsLabel}</span>` : ''}
+              ${a.canvas ? '' : `
               <button class="icon-btn" data-grade="${a.id}" title="Enter score" aria-label="Enter score for ${a.title}">✏️</button>
-              <button class="icon-btn" data-id="${a.id}" title="Delete assignment" aria-label="Delete ${a.title}">🗑</button>
+              <button class="icon-btn" data-id="${a.id}" title="Delete assignment" aria-label="Delete ${a.title}">🗑</button>`}
             </span>
           `;
           list.appendChild(li);
@@ -2277,6 +2319,18 @@
       const delBtn = e.target.closest('.icon-btn[data-id]');
       if (delBtn) removeAssignment(Number(delBtn.dataset.id));
     });
+
+    // Canvas sync entry point: wipe previous Canvas-sourced items, insert the fresh
+    // set. Replacing wholesale (keyed off the `canvas` flag) is what makes re-syncing
+    // idempotent — no duplicates, and items removed from Canvas disappear here too.
+    Toolkit.assignments = {
+      replaceCanvas(items) {
+        assignments = assignments.filter(a => !a.canvas);
+        items.forEach(item => assignments.push({ ...item, id: nextId++, canvas: true }));
+        save();
+        render();
+      }
+    };
 
     render();
   })();
@@ -2671,6 +2725,192 @@
   })();
 
   /* ============================================================
+     CANVAS SYNC
+     Reads a Canvas "Calendar Feed" (an .ics file — a plain-text calendar
+     format), and routes each event to the right tab:
+       - UIDs like "event-assignment-…"  -> Assignments
+       - weekly-repeating timed events   -> Schedule
+       - anything else                   -> skipped (reported in status)
+     ============================================================ */
+  (function () {
+    const SETTINGS_KEY = 'college-toolkit:canvas';
+    let settings = loadJSON(SETTINGS_KEY, { url: '', proxyOk: true, lastSync: null, lastSummary: '' });
+
+    const urlInput = document.getElementById('canvas-url');
+    const syncBtn = document.getElementById('canvas-sync-btn');
+    const proxyCheck = document.getElementById('canvas-proxy-ok');
+    const statusEl = document.getElementById('canvas-status');
+
+    urlInput.value = settings.url || '';
+    proxyCheck.checked = settings.proxyOk !== false;
+
+    function saveSettings() { saveJSON(SETTINGS_KEY, settings); }
+
+    function renderStatus(extra) {
+      if (!settings.lastSync) { statusEl.textContent = extra || 'Not synced yet.'; return; }
+      const when = new Date(settings.lastSync).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+      statusEl.textContent = `Last synced ${when} — ${settings.lastSummary}` + (extra ? ` · ${extra}` : '');
+    }
+
+    // ICS lines are hard-wrapped: a line starting with a space/tab is a continuation
+    // of the previous line, so first "unfold", then split into VEVENT blocks.
+    function parseICS(text) {
+      const raw = text.split(/\r?\n/);
+      const lines = [];
+      raw.forEach(line => {
+        if ((line.startsWith(' ') || line.startsWith('\t')) && lines.length) lines[lines.length - 1] += line.slice(1);
+        else lines.push(line);
+      });
+
+      const events = [];
+      let current = null;
+      lines.forEach(line => {
+        if (line === 'BEGIN:VEVENT') { current = {}; return; }
+        if (line === 'END:VEVENT') { if (current) events.push(current); current = null; return; }
+        if (!current) return;
+        const colon = line.indexOf(':');
+        if (colon === -1) return;
+        const keyPart = line.slice(0, colon);
+        const value = line.slice(colon + 1);
+        const [key, ...paramParts] = keyPart.split(';');
+        const params = {};
+        paramParts.forEach(p => { const eq = p.indexOf('='); if (eq > -1) params[p.slice(0, eq)] = p.slice(eq + 1); });
+        current[key] = { value, params };
+      });
+      return events;
+    }
+
+    function unescapeText(v) {
+      return (v || '').replace(/\\n/gi, ' ').replace(/\\([,;\\])/g, '$1').trim();
+    }
+
+    // Returns { date: 'YYYY-MM-DD', time: 'HH:MM' | null } in local time
+    function parseICSDate(prop) {
+      if (!prop) return null;
+      const v = prop.value;
+      if ((prop.params.VALUE === 'DATE') || /^\d{8}$/.test(v)) {
+        return { date: `${v.slice(0, 4)}-${v.slice(4, 6)}-${v.slice(6, 8)}`, time: null };
+      }
+      const m = v.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)$/);
+      if (!m) return null;
+      let d;
+      if (m[7] === 'Z') d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]));
+      else d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+      return {
+        date: isoOfDate(d),
+        time: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+      };
+    }
+
+    // Canvas titles look like "Essay 1 [FALL25 ECON 101]" — pull the course out
+    function splitSummary(summary) {
+      const m = summary.match(/^(.*?)\s*\[([^\]]+)\]\s*$/);
+      if (m) return { title: m[1].trim() || m[2].trim(), courseName: m[2].trim() };
+      return { title: summary, courseName: 'Canvas' };
+    }
+
+    const ICS_DAY_TO_CODE = { MO: 'Mon', TU: 'Tue', WE: 'Wed', TH: 'Thu', FR: 'Fri', SA: 'Sat', SU: 'Sun' };
+
+    function mapEvents(events) {
+      const assignments = [];
+      const classes = [];
+      let skipped = 0;
+
+      events.forEach(ev => {
+        const uid = ev.UID ? ev.UID.value : '';
+        const summary = unescapeText(ev.SUMMARY ? ev.SUMMARY.value : 'Untitled');
+        const start = parseICSDate(ev.DTSTART);
+        const end = parseICSDate(ev.DTEND);
+        const location = unescapeText(ev.LOCATION ? ev.LOCATION.value : '');
+        const rrule = ev.RRULE ? ev.RRULE.value : '';
+
+        if (uid.includes('event-assignment')) {
+          if (!start) { skipped++; return; }
+          const { title, courseName } = splitSummary(summary);
+          assignments.push({ canvasUid: uid, courseId: null, courseName, title, dueDate: start.date, dueTime: start.time, pointsPossible: null, pointsEarned: null });
+          return;
+        }
+
+        if (rrule.includes('FREQ=WEEKLY') && start && start.time) {
+          const byday = (rrule.match(/BYDAY=([^;]+)/) || [])[1];
+          const days = byday ? byday.split(',').map(d => ICS_DAY_TO_CODE[d.trim()]).filter(Boolean) : [];
+          const { title } = splitSummary(summary);
+          const endTime = end && end.time ? end.time : start.time;
+          if (days.length === 0) { skipped++; return; }
+          days.forEach(day => {
+            classes.push({ canvasUid: `${uid}:${day}`, name: title, day, start: start.time, end: endTime, location });
+          });
+          return;
+        }
+
+        skipped++;
+      });
+
+      return { assignments, classes, skipped };
+    }
+
+    async function fetchFeed(url) {
+      // Try the direct URL first. Canvas doesn't send CORS headers, so browsers
+      // usually block this — in that case optionally retry through a public proxy
+      // that adds the header. Tradeoff: the proxy can see the (secret) feed URL.
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.text();
+      } catch (directErr) {
+        if (!proxyCheck.checked) throw new Error('Direct fetch blocked (CORS) and proxy fallback is off.');
+        const res = await fetch('https://corsproxy.io/?url=' + encodeURIComponent(url));
+        if (!res.ok) throw new Error(`Proxy fetch failed (HTTP ${res.status})`);
+        return await res.text();
+      }
+    }
+
+    async function sync() {
+      const url = urlInput.value.trim();
+      if (!url) { statusEl.textContent = 'Paste your Canvas calendar feed URL first.'; return; }
+      const isLocalTest = /^http:\/\/localhost[:/]/i.test(url);
+      if (!isLocalTest && !/^https:\/\/.+\.ics(\?.*)?$/i.test(url) && !url.includes('/feeds/calendars/')) {
+        statusEl.textContent = "That doesn't look like a Canvas calendar feed (.ics) link.";
+        return;
+      }
+
+      settings.url = url;
+      settings.proxyOk = proxyCheck.checked;
+      saveSettings();
+
+      syncBtn.disabled = true;
+      syncBtn.textContent = 'Syncing…';
+      statusEl.textContent = 'Fetching feed…';
+
+      try {
+        const text = await fetchFeed(url);
+        if (!text.trimStart().startsWith('BEGIN:VCALENDAR')) throw new Error("Response wasn't an ICS calendar.");
+        const events = parseICS(text);
+        const { assignments, classes, skipped } = mapEvents(events);
+
+        Toolkit.assignments.replaceCanvas(assignments);
+        Toolkit.schedule.replaceCanvas(classes);
+
+        settings.lastSync = Date.now();
+        settings.lastSummary = `${assignments.length} assignment${assignments.length === 1 ? '' : 's'}, ${classes.length} class meeting${classes.length === 1 ? '' : 's'}${skipped ? `, ${skipped} other event${skipped === 1 ? '' : 's'} skipped` : ''}`;
+        saveSettings();
+        renderStatus();
+        if (typeof dashboardRefresh === 'function') dashboardRefresh();
+      } catch (err) {
+        renderStatus(`Sync failed: ${err.message}`);
+      } finally {
+        syncBtn.disabled = false;
+        syncBtn.textContent = 'Sync Now';
+      }
+    }
+
+    syncBtn.addEventListener('click', sync);
+    proxyCheck.addEventListener('change', () => { settings.proxyOk = proxyCheck.checked; saveSettings(); });
+
+    renderStatus();
+  })();
+
+  /* ============================================================
      DASHBOARD
      ============================================================ */
   (function () {
@@ -2694,7 +2934,8 @@
       'college-toolkit:contacts',
       'college-toolkit:contacts-seeded',
       'college-toolkit:checklist-movein',
-      'college-toolkit:checklist-firstweek'
+      'college-toolkit:checklist-firstweek',
+      'college-toolkit:canvas'
     ];
 
     function renderStats() {

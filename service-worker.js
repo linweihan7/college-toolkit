@@ -1,6 +1,6 @@
 // Network-first with cache fallback, so the installed app still opens offline
 // but always prefers a fresh copy when one is reachable.
-const CACHE_NAME = 'college-toolkit-v1';
+const CACHE_NAME = 'college-toolkit-v2';
 const PRECACHE_URLS = [
   './',
   './index.html',
@@ -28,6 +28,11 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
 
+  // Never intercept cross-origin requests (Canvas feeds, weather API, future APIs):
+  // the page must see their real success/failure, not a cached stand-in.
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin) return;
+
   event.respondWith(
     fetch(event.request)
       .then(response => {
@@ -35,6 +40,12 @@ self.addEventListener('fetch', event => {
         caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
         return response;
       })
-      .catch(() => caches.match(event.request).then(cached => cached || caches.match('./index.html')))
+      .catch(() =>
+        caches.match(event.request).then(cached =>
+          // index.html fallback only makes sense when the user is opening a page,
+          // never as a substitute for a failed data/asset request.
+          cached || (event.request.mode === 'navigate' ? caches.match('./index.html') : Response.error())
+        )
+      )
   );
 });
