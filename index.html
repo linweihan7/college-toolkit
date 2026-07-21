@@ -32,6 +32,7 @@
 </script>
 <!-- Self-hosted (not CDN) so offline mode and the service worker cache cover it too -->
 <script src="vendor/supabase.min.js"></script>
+<script src="vendor/chart.umd.js"></script>
 <style>
   :root {
     --accent: #5546e0;
@@ -520,6 +521,14 @@
   .heatmap-cell.level-2 { background: var(--accent); opacity: 0.65; }
   .heatmap-cell.level-3 { background: var(--accent); opacity: 1; }
 
+  .chart-box { position: relative; height: 220px; }
+  .chart-takeaway { font-size: 13px; color: var(--ink); margin: 14px 0 0; line-height: 1.5; padding: 10px 12px; background: var(--wash); border-radius: 8px; }
+  .chart-takeaway::before { content: "💡 "; }
+  .chart-empty { display: flex; align-items: center; justify-content: center; height: 220px; color: var(--muted); font-size: 13px; text-align: center; padding: 0 20px; }
+  #review-body { font-size: 14px; line-height: 1.6; color: var(--ink); }
+  #review-body p { margin: 0 0 10px; }
+  #review-body .review-meta { font-size: 12px; color: var(--muted); }
+
   .cmdk-overlay {
     position: fixed;
     inset: 0;
@@ -658,6 +667,7 @@
         <button class="nav-btn" data-panel="assignments"><span class="nav-icon">📝</span><span>Assignments</span></button>
         <button class="nav-btn" data-panel="timer"><span class="nav-icon">⏱️</span><span>Timer</span></button>
         <button class="nav-btn" data-panel="habits"><span class="nav-icon">🔥</span><span>Habits</span></button>
+        <button class="nav-btn" data-panel="insights"><span class="nav-icon">📈</span><span>Insights</span></button>
         <button class="nav-btn" data-panel="wellness"><span class="nav-icon">💚</span><span>Wellness</span></button>
         <button class="nav-btn" data-panel="contacts"><span class="nav-icon">👤</span><span>Contacts</span></button>
         <button class="nav-btn" data-panel="guide"><span class="nav-icon">🧭</span><span>Guide</span></button>
@@ -1079,6 +1089,44 @@
           </div>
         </section>
 
+        <!-- INSIGHTS -->
+        <section id="panel-insights" class="panel" hidden>
+          <div class="card">
+            <h1 class="page-title">Insights</h1>
+            <p class="page-sub">Patterns across your data. The more you track, the more these show.</p>
+          </div>
+
+          <div class="card" id="review-card" hidden>
+            <h2 class="section-title">🗓️ Weekly Review</h2>
+            <div id="review-body"></div>
+            <button id="review-btn" class="field-full btn-secondary" style="margin-top:12px;">Generate this week's review</button>
+          </div>
+
+          <div class="card">
+            <h2 class="section-title">Spending by Day of Week</h2>
+            <div class="chart-box"><canvas id="chart-dow"></canvas></div>
+            <p class="chart-takeaway" id="takeaway-dow"></p>
+          </div>
+
+          <div class="card">
+            <h2 class="section-title">Spending by Category Over Time</h2>
+            <div class="chart-box"><canvas id="chart-cat"></canvas></div>
+            <p class="chart-takeaway" id="takeaway-cat"></p>
+          </div>
+
+          <div class="card">
+            <h2 class="section-title">Focus Hours vs Assignments Completed</h2>
+            <div class="chart-box"><canvas id="chart-focus"></canvas></div>
+            <p class="chart-takeaway" id="takeaway-focus"></p>
+          </div>
+
+          <div class="card">
+            <h2 class="section-title">Habit Consistency vs GPA</h2>
+            <div class="chart-box"><canvas id="chart-habit"></canvas></div>
+            <p class="chart-takeaway" id="takeaway-habit"></p>
+          </div>
+        </section>
+
       </div>
     </main>
   </div>
@@ -1227,7 +1275,8 @@
     'college-toolkit:contacts-seeded',
     'college-toolkit:checklist-movein',
     'college-toolkit:checklist-firstweek',
-    'college-toolkit:canvas'
+    'college-toolkit:canvas',
+    'college-toolkit:timer-history'
   ];
 
   /* ---------- Dark mode toggle ---------- */
@@ -1248,6 +1297,9 @@
 
   /* ---------- Sidebar navigation between tools ---------- */
   let dashboardRefresh = null;
+  // Panels can register a callback to run each time they're shown (charts need
+  // their container visible to size correctly, so they render on-open, not at boot).
+  const panelShowHooks = {};
   const navButtons = document.querySelectorAll('.nav-btn');
   const panels = document.querySelectorAll('.panel');
 
@@ -1257,6 +1309,7 @@
     navButtons.forEach(b => b.classList.toggle('active', b.dataset.panel === name));
     history.replaceState(null, '', `#${name}`);
     if (name === 'dashboard' && typeof dashboardRefresh === 'function') dashboardRefresh();
+    if (typeof panelShowHooks[name] === 'function') panelShowHooks[name]();
   }
 
   navButtons.forEach(btn => btn.addEventListener('click', () => showPanel(btn.dataset.panel)));
@@ -2030,6 +2083,14 @@
         if (mode === 'focus') {
           sessionsData.count++;
           saveSessions();
+          // Accumulate a per-day history of completed focus sessions + minutes so
+          // Insights can chart focus over time (the live counter only holds today).
+          const hist = loadJSON('college-toolkit:timer-history', {});
+          const today = todayISO();
+          if (!hist[today]) hist[today] = { sessions: 0, minutes: 0 };
+          hist[today].sessions += 1;
+          hist[today].minutes += settings.workMinutes;
+          saveJSON('college-toolkit:timer-history', hist);
           const isLongBreak = sessionsData.count % settings.longBreakInterval === 0;
           mode = isLongBreak ? 'longbreak' : 'break';
           totalSeconds = (isLongBreak ? settings.longBreakMinutes : settings.breakMinutes) * 60;
@@ -3300,6 +3361,261 @@
   })();
 
   /* ============================================================
+     INSIGHTS
+     Charts (Chart.js) that correlate data across tools, each with a plain
+     one-line takeaway, plus an optional Claude-generated weekly review.
+     Charts render when the panel opens (a canvas needs a visible, sized box)
+     and old chart instances are destroyed first to avoid leaks.
+     ============================================================ */
+  (function () {
+    const CAT_COLORS = { food: '#ff7675', transport: '#4d96ff', fun: '#f6b93b', other: '#9b7bf0' };
+    const CAT_LABELS = { food: 'Food', transport: 'Transport', fun: 'Fun', other: 'Other' };
+    const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const charts = {};
+    let rendered = false;
+
+    function css(varName) { return getComputedStyle(document.documentElement).getPropertyValue(varName).trim(); }
+
+    function mondayOf(d) {
+      const x = new Date(d); x.setHours(0, 0, 0, 0);
+      x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+      return x;
+    }
+    function lastNWeeks(n) {
+      const start = mondayOf(new Date());
+      const weeks = [];
+      for (let i = n - 1; i >= 0; i--) {
+        const s = new Date(start); s.setDate(s.getDate() - i * 7);
+        const e = new Date(s); e.setDate(e.getDate() + 6);
+        weeks.push({ start: s, end: e, label: s.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' }) });
+      }
+      return weeks;
+    }
+    function inWeek(iso, wk) { const d = parseISODate(iso); return d >= wk.start && d <= new Date(wk.end.getFullYear(), wk.end.getMonth(), wk.end.getDate(), 23, 59, 59); }
+
+    function baseOpts() {
+      const grid = css('--hairline'); const tick = css('--muted');
+      return {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: tick, boxWidth: 12, font: { size: 11 } } } },
+        scales: {
+          x: { grid: { color: grid }, ticks: { color: tick, font: { size: 10 } } },
+          y: { grid: { color: grid }, ticks: { color: tick, font: { size: 10 } }, beginAtZero: true }
+        }
+      };
+    }
+
+    // Each canvas lives in a stable .chart-box we never rebuild. Empty state is an
+    // overlay div toggled on/off, so the canvas element is always present for reuse.
+    function overlay(canvasId) {
+      const canvas = document.getElementById(canvasId);
+      const box = canvas.parentElement;
+      let ov = box.querySelector('.chart-empty');
+      return { canvas, box, ov };
+    }
+    function setEmpty(canvasId, takeawayId, msg) {
+      const { canvas, box } = overlay(canvasId);
+      if (charts[canvasId]) { charts[canvasId].destroy(); delete charts[canvasId]; }
+      canvas.style.display = 'none';
+      let ov = box.querySelector('.chart-empty');
+      if (!ov) { ov = document.createElement('div'); ov.className = 'chart-empty'; box.appendChild(ov); }
+      ov.textContent = msg;
+      document.getElementById(takeawayId).textContent = '';
+    }
+    function drawChart(canvasId, config) {
+      const { canvas, box } = overlay(canvasId);
+      const ov = box.querySelector('.chart-empty');
+      if (ov) ov.remove();
+      canvas.style.display = '';
+      if (charts[canvasId]) charts[canvasId].destroy();
+      charts[canvasId] = new Chart(canvas.getContext('2d'), config);
+    }
+    function takeaway(id, text) { document.getElementById(id).textContent = text; }
+
+    // ---- Chart 1: spending by day of week ----
+    function renderDOW() {
+      const expenses = loadJSON('college-toolkit:expenses', []);
+      if (expenses.length < 3) return setEmpty('chart-dow', 'takeaway-dow', 'Add a few expenses to see which days you spend the most.');
+      const sums = [0, 0, 0, 0, 0, 0, 0];
+      const counts = [0, 0, 0, 0, 0, 0, 0];
+      expenses.forEach(e => { const idx = (parseISODate(e.date).getDay() + 6) % 7; sums[idx] += e.amount; counts[idx]++; });
+      drawChart('chart-dow', {
+        type: 'bar',
+        data: { labels: WEEKDAYS, datasets: [{ label: 'Total spent', data: sums, backgroundColor: css('--accent'), borderRadius: 6 }] },
+        options: { ...baseOpts(), plugins: { ...baseOpts().plugins, legend: { display: false } } }
+      });
+      const max = Math.max(...sums); const maxDay = WEEKDAYS[sums.indexOf(max)];
+      const total = sums.reduce((a, b) => a + b, 0);
+      takeaway('takeaway-dow', max > 0 ? `${maxDay} is your biggest spending day — $${max.toFixed(2)}, about ${Math.round(max / total * 100)}% of all your tracked spending.` : 'No spending recorded yet.');
+    }
+
+    // ---- Chart 2: spending by category over the last 6 months ----
+    function renderCategory() {
+      const expenses = loadJSON('college-toolkit:expenses', []);
+      if (expenses.length < 3) return setEmpty('chart-cat', 'takeaway-cat', 'Add expenses across a few months to see category trends.');
+      const months = [];
+      const base = new Date(); base.setDate(1);
+      for (let i = 5; i >= 0; i--) { const d = new Date(base.getFullYear(), base.getMonth() - i, 1); months.push({ key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, label: d.toLocaleDateString('en-US', { month: 'short' }) }); }
+      const cats = Object.keys(CAT_COLORS);
+      const catTotals = {};
+      const datasets = cats.map(cat => {
+        const data = months.map(m => {
+          const sum = expenses.filter(e => e.category === cat && e.date.slice(0, 7) === m.key).reduce((s, e) => s + e.amount, 0);
+          catTotals[cat] = (catTotals[cat] || 0) + sum;
+          return sum;
+        });
+        return { label: CAT_LABELS[cat], data, backgroundColor: CAT_COLORS[cat], borderRadius: 4 };
+      });
+      const o = baseOpts();
+      drawChart('chart-cat', { type: 'bar', data: { labels: months.map(m => m.label), datasets }, options: { ...o, scales: { x: { ...o.scales.x, stacked: true }, y: { ...o.scales.y, stacked: true } } } });
+      const topCat = Object.entries(catTotals).sort((a, b) => b[1] - a[1])[0];
+      takeaway('takeaway-cat', topCat && topCat[1] > 0 ? `Over the last 6 months, ${CAT_LABELS[topCat[0]]} is your largest category at $${topCat[1].toFixed(2)}.` : 'Not enough categorized spending yet.');
+    }
+
+    // ---- Chart 3: focus hours vs assignments completed, per week ----
+    function renderFocus() {
+      const hist = loadJSON('college-toolkit:timer-history', {});
+      const assignments = loadJSON('college-toolkit:assignments', []);
+      const focusDays = Object.keys(hist).length;
+      if (focusDays === 0) return setEmpty('chart-focus', 'takeaway-focus', 'Complete some focus sessions in the Timer to chart focus vs coursework.');
+      const weeks = lastNWeeks(8);
+      const focusHrs = weeks.map(wk => Object.entries(hist).filter(([d]) => inWeek(d, wk)).reduce((s, [, v]) => s + v.minutes, 0) / 60);
+      const doneCounts = weeks.map(wk => assignments.filter(a => a.pointsEarned !== null && a.dueDate && inWeek(a.dueDate, wk)).length);
+      const o = baseOpts();
+      drawChart('chart-focus', {
+        data: {
+          labels: weeks.map(w => w.label),
+          datasets: [
+            { type: 'bar', label: 'Focus hours', data: focusHrs.map(h => +h.toFixed(1)), backgroundColor: css('--accent'), borderRadius: 5, yAxisID: 'y' },
+            { type: 'line', label: 'Assignments done', data: doneCounts, borderColor: css('--ember'), backgroundColor: css('--ember'), tension: 0.3, yAxisID: 'y1' }
+          ]
+        },
+        options: { ...o, scales: { x: o.scales.x, y: { ...o.scales.y, position: 'left', title: { display: true, text: 'hrs', color: css('--muted') } }, y1: { ...o.scales.y, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'done', color: css('--muted') } } } }
+      });
+      const totalHrs = focusHrs.reduce((a, b) => a + b, 0);
+      const totalDone = doneCounts.reduce((a, b) => a + b, 0);
+      takeaway('takeaway-focus', totalDone > 0 ? `${totalHrs.toFixed(1)} focus hours over 8 weeks, alongside ${totalDone} assignment${totalDone === 1 ? '' : 's'} completed. Weeks with more focus tend to clear more coursework.` : `${totalHrs.toFixed(1)} focus hours logged over 8 weeks. Grade some assignments to see how focus lines up with completion.`);
+    }
+
+    // ---- Chart 4: habit consistency vs grade trend, per week ----
+    function renderHabit() {
+      const habits = loadJSON('college-toolkit:habits', []);
+      const assignments = loadJSON('college-toolkit:assignments', []);
+      if (habits.length === 0) return setEmpty('chart-habit', 'takeaway-habit', 'Track a habit or two, and grade some assignments, to see how consistency lines up with grades.');
+      const weeks = lastNWeeks(8);
+      const habitRate = weeks.map(wk => {
+        let checks = 0;
+        habits.forEach(h => { for (let i = 0; i < 7; i++) { const d = new Date(wk.start); d.setDate(d.getDate() + i); if ((h.checks || {})[isoOfDate(d)]) checks++; } });
+        const possible = habits.length * 7;
+        return possible ? Math.round(checks / possible * 100) : 0;
+      });
+      const gradeAvg = weeks.map(wk => {
+        const graded = assignments.filter(a => a.pointsEarned !== null && a.pointsPossible && a.dueDate && inWeek(a.dueDate, wk));
+        if (!graded.length) return null;
+        const pct = graded.reduce((s, a) => s + (a.pointsEarned / a.pointsPossible) * 100, 0) / graded.length;
+        return Math.round(pct);
+      });
+      const o = baseOpts();
+      drawChart('chart-habit', {
+        data: {
+          labels: weeks.map(w => w.label),
+          datasets: [
+            { type: 'bar', label: 'Habit consistency %', data: habitRate, backgroundColor: css('--accent'), borderRadius: 5, yAxisID: 'y' },
+            { type: 'line', label: 'Avg grade %', data: gradeAvg, borderColor: css('--good'), backgroundColor: css('--good'), tension: 0.3, spanGaps: true, yAxisID: 'y' }
+          ]
+        },
+        options: { ...o, scales: { x: o.scales.x, y: { ...o.scales.y, max: 100 } } }
+      });
+      const avgRate = Math.round(habitRate.reduce((a, b) => a + b, 0) / habitRate.length);
+      const gradedWeeks = gradeAvg.filter(g => g !== null);
+      takeaway('takeaway-habit', gradedWeeks.length ? `You keep your habits about ${avgRate}% of days. Compare the bars to the grade line to see whether your steadier weeks track with better grades.` : `Averaging ${avgRate}% habit consistency. Grade some assignments to overlay your grade trend here.`);
+    }
+
+    function renderAll() {
+      if (typeof Chart === 'undefined') return;
+      try { renderDOW(); renderCategory(); renderFocus(); renderHabit(); } catch (err) { console.warn('Insights render failed', err); }
+      rendered = true;
+    }
+
+    // ---- Weekly review (Claude API, from Phase 3's key) ----
+    const reviewCard = document.getElementById('review-card');
+    const reviewBody = document.getElementById('review-body');
+    const reviewBtn = document.getElementById('review-btn');
+    const AI_KEY = 'college-toolkit:anthropic-key';
+
+    function weekData() {
+      const start = mondayOf(new Date());
+      const wk = { start, end: (() => { const e = new Date(start); e.setDate(e.getDate() + 6); return e; })() };
+      const expenses = loadJSON('college-toolkit:expenses', []).filter(e => inWeek(e.date, wk));
+      const hist = loadJSON('college-toolkit:timer-history', {});
+      const focusMin = Object.entries(hist).filter(([d]) => inWeek(d, wk)).reduce((s, [, v]) => s + v.minutes, 0);
+      const habits = loadJSON('college-toolkit:habits', []);
+      const assignments = loadJSON('college-toolkit:assignments', []);
+      const wellness = loadJSON('college-toolkit:wellness', []).filter(w => inWeek(w.date, wk));
+      let habitChecks = 0; habits.forEach(h => { for (let i = 0; i < 7; i++) { const d = new Date(start); d.setDate(d.getDate() + i); if ((h.checks || {})[isoOfDate(d)]) habitChecks++; } });
+      return {
+        spent: +expenses.reduce((s, e) => s + e.amount, 0).toFixed(2),
+        topExpense: expenses.sort((a, b) => b.amount - a.amount)[0]?.name || null,
+        focusHours: +(focusMin / 60).toFixed(1),
+        habitChecks, habitPossible: habits.length * 7,
+        assignmentsDone: assignments.filter(a => a.pointsEarned !== null && a.dueDate && inWeek(a.dueDate, wk)).length,
+        assignmentsDue: assignments.filter(a => a.dueDate && inWeek(a.dueDate, wk)).length,
+        avgMood: wellness.length ? +(wellness.reduce((s, w) => s + w.mood, 0) / wellness.length).toFixed(1) : null,
+        avgSleep: wellness.filter(w => w.sleepHours != null).length ? +(wellness.filter(w => w.sleepHours != null).reduce((s, w) => s + w.sleepHours, 0) / wellness.filter(w => w.sleepHours != null).length).toFixed(1) : null
+      };
+    }
+
+    function localReview(d) {
+      const bits = [];
+      bits.push(`You spent <strong>$${d.spent.toFixed(2)}</strong> this week${d.topExpense ? ` (biggest: ${d.topExpense})` : ''}.`);
+      bits.push(`Logged <strong>${d.focusHours}h</strong> of focus time.`);
+      if (d.habitPossible) bits.push(`Kept habits <strong>${Math.round(d.habitChecks / d.habitPossible * 100)}%</strong> of the time.`);
+      if (d.assignmentsDue) bits.push(`Completed <strong>${d.assignmentsDone}/${d.assignmentsDue}</strong> assignments due this week.`);
+      if (d.avgMood) bits.push(`Average mood ${d.avgMood}/5${d.avgSleep ? `, ${d.avgSleep}h sleep` : ''}.`);
+      return `<p>${bits.join(' ')}</p><p class="review-meta">Add a Claude API key on the Dashboard for a smarter, more personal review.</p>`;
+    }
+
+    async function aiReview(d) {
+      const key = localStorage.getItem(AI_KEY);
+      if (!key) return null;
+      const system = `You are a warm, brief college coach. Given this week's stats as JSON, write a 3-4 sentence encouraging review: one thing that went well, one gentle nudge, and a concrete suggestion for next week. No markdown headers, no bullet points, just short friendly prose.`;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 12000);
+      try {
+        const res = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST', signal: controller.signal,
+          headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+          body: JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 400, system, messages: [{ role: 'user', content: JSON.stringify(d) }] })
+        });
+        if (!res.ok) throw new Error('API ' + res.status);
+        const data = await res.json();
+        const txt = (data.content?.[0]?.text || '').trim();
+        return txt ? `<p>${txt.replace(/\n+/g, '</p><p>')}</p>` : null;
+      } finally { clearTimeout(timer); }
+    }
+
+    async function generateReview() {
+      reviewBtn.disabled = true; reviewBtn.textContent = 'Writing…';
+      reviewBody.innerHTML = '<p class="review-meta">Summarizing your week…</p>';
+      const d = weekData();
+      let html = null;
+      try { html = await aiReview(d); } catch (err) { html = null; }
+      reviewBody.innerHTML = html || localReview(d);
+      reviewBtn.disabled = false; reviewBtn.textContent = 'Refresh review';
+    }
+
+    reviewBtn.addEventListener('click', generateReview);
+
+    panelShowHooks.insights = function () {
+      // Charts must (re)draw each open so theme changes + new data are reflected.
+      renderAll();
+      reviewCard.hidden = false;
+      // Nudge on Sundays: prefill the review automatically.
+      if (new Date().getDay() === 0 && reviewBody.innerHTML.trim() === '') generateReview();
+    };
+  })();
+
+  /* ============================================================
      CLOUD SYNC (Supabase)
      Offline-first: localStorage stays the source of truth on this device.
      Each key carries a local last-write timestamp; the server keeps one per
@@ -3548,6 +3864,7 @@
       { label: 'Go to GPA', icon: '🎯', action: () => showPanel('gpa') },
       { label: 'Go to Timer', icon: '⏱️', action: () => showPanel('timer') },
       { label: 'Go to Habits', icon: '🔥', action: () => showPanel('habits') },
+      { label: 'Go to Insights', icon: '📈', action: () => showPanel('insights') },
       { label: 'Go to Assignments', icon: '📝', action: () => showPanel('assignments') },
       { label: 'Go to Wellness', icon: '💚', action: () => showPanel('wellness') },
       { label: 'Go to Contacts', icon: '👤', action: () => showPanel('contacts') },
