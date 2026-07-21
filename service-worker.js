@@ -1,6 +1,6 @@
 // Network-first with cache fallback, so the installed app still opens offline
 // but always prefers a fresh copy when one is reachable.
-const CACHE_NAME = 'college-toolkit-v3';
+const CACHE_NAME = 'college-toolkit-v4';
 const PRECACHE_URLS = [
   './',
   './index.html',
@@ -9,6 +9,7 @@ const PRECACHE_URLS = [
   './icon-512.png',
   './icon-192-maskable.png',
   './icon-512-maskable.png',
+  './vendor/supabase.min.js',
 ];
 
 self.addEventListener('install', event => {

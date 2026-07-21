@@ -30,6 +30,8 @@
     });
   }
 </script>
+<!-- Self-hosted (not CDN) so offline mode and the service worker cache cover it too -->
+<script src="vendor/supabase.min.js"></script>
 <style>
   :root {
     --accent: #5546e0;
@@ -680,6 +682,36 @@
           <div class="stat-grid" id="dash-stats"></div>
 
           <div class="card">
+            <h2 class="section-title">Account &amp; Cloud Sync</h2>
+            <p class="backup-note" id="sync-note">Sync your data to the cloud so it follows you across devices. Works fully offline and logged out — sync is a bonus, not a requirement.</p>
+
+            <div id="sync-config-area">
+              <div class="field-row" style="margin-bottom:0;">
+                <input id="sb-url" type="url" placeholder="Supabase project URL — https://xxxx.supabase.co" class="field-full" autocomplete="off">
+                <input id="sb-key" type="password" placeholder="Supabase anon public key — eyJ…" class="field-full" autocomplete="off">
+                <button id="sb-save-btn" class="field-full btn-secondary">Save Connection</button>
+              </div>
+            </div>
+
+            <div id="sync-auth-area" hidden>
+              <div class="field-row" style="margin-bottom:0;">
+                <input id="sb-email" type="email" placeholder="you@wisc.edu" class="field-full" autocomplete="email">
+                <button id="sb-login-btn" class="field-full">Email Me a Sign-In Link</button>
+                <button id="sb-edit-btn" class="field-full btn-secondary">Edit Connection</button>
+              </div>
+            </div>
+
+            <div id="sync-active-area" hidden>
+              <div class="field-row" style="margin-bottom:0;">
+                <button id="sb-sync-btn" class="field-half">Sync Now</button>
+                <button id="sb-logout-btn" class="field-half btn-secondary">Sign Out</button>
+              </div>
+            </div>
+
+            <p class="backup-note" id="sync-status" style="margin:10px 0 0;"></p>
+          </div>
+
+          <div class="card">
             <h2 class="section-title">Canvas Sync</h2>
             <p class="backup-note">In Canvas, go to <strong>Calendar → Calendar Feed</strong>, copy the link, and paste it here. Your assignments and class times will fill in automatically. The feed URL contains a private token — treat it like a password.</p>
             <div class="field-row" style="margin-bottom:10px;">
@@ -1122,6 +1154,9 @@
     try {
       localStorage.setItem(key, JSON.stringify(value));
       showSavedToast();
+      // Tell the cloud-sync engine (if it's set up) that this key changed, so it
+      // can queue a push. Guarded: sync loads later and is entirely optional.
+      if (Toolkit.sync) Toolkit.sync.onLocalWrite(key);
     } catch (err) {
       console.warn('Could not save', key, err);
     }
@@ -1172,6 +1207,28 @@
   // into another tool (like Canvas sync populating Assignments) go through the one
   // function that tool chooses to expose here, instead of reaching into its internals.
   const Toolkit = {};
+
+  // Every localStorage key that holds user data. This one list drives both the
+  // backup file and cloud sync, so a new feature only has to register here once.
+  // Deliberately absent: the Claude API key (never leaves this browser).
+  const DATA_KEYS = [
+    'college-toolkit:expenses',
+    'college-toolkit:expense-budget',
+    'college-toolkit:todos',
+    'college-toolkit:schedule',
+    'college-toolkit:gpa',
+    'college-toolkit:timer-settings',
+    'college-toolkit:timer-sessions',
+    'college-toolkit:habits',
+    'college-toolkit:theme',
+    'college-toolkit:assignments',
+    'college-toolkit:wellness',
+    'college-toolkit:contacts',
+    'college-toolkit:contacts-seeded',
+    'college-toolkit:checklist-movein',
+    'college-toolkit:checklist-firstweek',
+    'college-toolkit:canvas'
+  ];
 
   /* ---------- Dark mode toggle ---------- */
   const themeToggleBtn = document.getElementById('theme-toggle-btn');
@@ -2975,24 +3032,9 @@
     const importBtn = document.getElementById('backup-import-btn');
     const fileInput = document.getElementById('backup-file-input');
 
-    const BACKUP_KEYS = [
-      'college-toolkit:expenses',
-      'college-toolkit:expense-budget',
-      'college-toolkit:todos',
-      'college-toolkit:schedule',
-      'college-toolkit:gpa',
-      'college-toolkit:timer-settings',
-      'college-toolkit:timer-sessions',
-      'college-toolkit:habits',
-      'college-toolkit:theme',
-      'college-toolkit:assignments',
-      'college-toolkit:wellness',
-      'college-toolkit:contacts',
-      'college-toolkit:contacts-seeded',
-      'college-toolkit:checklist-movein',
-      'college-toolkit:checklist-firstweek',
-      'college-toolkit:canvas'
-    ];
+    // Backups carry all synced data plus the Supabase connection settings
+    // (safe: the anon key is public by design; the secret is your magic-link email).
+    const BACKUP_KEYS = [...DATA_KEYS, 'college-toolkit:supabase-config'];
 
     function renderStats() {
       const expenses = loadJSON('college-toolkit:expenses', []);
@@ -3255,6 +3297,199 @@
     // Re-check the moment the user comes back to the app — on phones the interval
     // is frozen while the app is backgrounded, so this is the wake-up path.
     document.addEventListener('visibilitychange', () => { if (!document.hidden) checkReminders(); });
+  })();
+
+  /* ============================================================
+     CLOUD SYNC (Supabase)
+     Offline-first: localStorage stays the source of truth on this device.
+     Each key carries a local last-write timestamp; the server keeps one per
+     row. Whoever wrote latest wins (last-write-wins), per key.
+     Pulls happen at startup/login/manual "Sync Now" (never mid-session, so a
+     background pull can't yank state out from under you); pushes are automatic
+     and debounced a couple of seconds after any change.
+     ============================================================ */
+  (function () {
+    const CONFIG_KEY = 'college-toolkit:supabase-config';
+    const META_KEY = 'college-toolkit:sync-meta';
+    const LAST_KEY = 'college-toolkit:sync-last';
+
+    let config = loadJSON(CONFIG_KEY, null);
+    let client = null;
+    let session = null;
+    const dirty = new Set();
+    let pushTimer = null;
+
+    const noteEl = document.getElementById('sync-note');
+    const statusEl = document.getElementById('sync-status');
+    const configArea = document.getElementById('sync-config-area');
+    const authArea = document.getElementById('sync-auth-area');
+    const activeArea = document.getElementById('sync-active-area');
+    const urlInput = document.getElementById('sb-url');
+    const keyInput = document.getElementById('sb-key');
+    const emailInput = document.getElementById('sb-email');
+
+    // Meta is bookkeeping about sync itself, so it is neither synced nor backed up.
+    function meta() { return loadJSON(META_KEY, {}); }
+    function setMeta(m) { try { localStorage.setItem(META_KEY, JSON.stringify(m)); } catch (err) { /* ignore */ } }
+
+    function status(msg) { statusEl.textContent = msg; }
+
+    function renderUI() {
+      configArea.hidden = !!config;
+      authArea.hidden = !config || !!session;
+      activeArea.hidden = !session;
+      if (session) {
+        noteEl.textContent = `Signed in as ${session.user.email}. Changes push automatically a moment after you make them.`;
+        const last = Number(localStorage.getItem(LAST_KEY) || 0);
+        if (!dirty.size && last) {
+          status('Last synced ' + new Date(last).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }));
+        }
+      } else if (config) {
+        noteEl.textContent = 'Connected to your Supabase project. Sign in with a magic link — no password to remember.';
+      } else {
+        noteEl.textContent = 'Sync your data to the cloud so it follows you across devices. Works fully offline and logged out — sync is a bonus, not a requirement. Setup steps are in the project README.';
+      }
+    }
+
+    function initClient() {
+      if (!config || typeof supabase === 'undefined') return false;
+      try {
+        client = supabase.createClient(config.url, config.anonKey);
+        // Wire auth here (not just at startup) so a freshly-saved connection reacts
+        // to sign-in without needing a reload.
+        client.auth.onAuthStateChange((event, s) => {
+          const hadSession = !!session;
+          session = s;
+          renderUI();
+          if (event === 'SIGNED_IN' && !hadSession) pullAll();
+        });
+        client.auth.getSession().then(({ data }) => {
+          if (data.session && !session) { session = data.session; renderUI(); pullAll(); }
+        });
+        return true;
+      } catch (err) {
+        status('Could not connect: ' + err.message);
+        return false;
+      }
+    }
+
+    async function pushDirty() {
+      if (!client || !session || dirty.size === 0) return;
+      const m = meta();
+      const rows = [...dirty].map(key => {
+        const raw = localStorage.getItem(key);
+        return {
+          user_id: session.user.id,
+          key,
+          value: raw === null ? null : JSON.parse(raw),
+          updated_at: new Date(m[key] || Date.now()).toISOString()
+        };
+      });
+      status(`Syncing ${rows.length} change${rows.length === 1 ? '' : 's'}…`);
+      const { error } = await client.from('toolkit_data').upsert(rows);
+      if (error) { status('Sync push failed: ' + error.message); return; }
+      dirty.clear();
+      localStorage.setItem(LAST_KEY, String(Date.now()));
+      renderUI();
+    }
+
+    // Last-write-wins merge: newer remote rows overwrite local; keys where local
+    // is newer (or cloud has nothing yet) get queued for push. Applying remote
+    // changes ends in one reload so every tab re-reads storage — it terminates
+    // because the second pass finds timestamps equal.
+    async function pullAll() {
+      if (!client || !session) return;
+      status('Pulling from cloud…');
+      const { data, error } = await client.from('toolkit_data').select('key,value,updated_at');
+      if (error) { status('Sync pull failed: ' + error.message); return; }
+      const m = meta();
+      let changed = 0;
+      const candidates = new Set(DATA_KEYS.filter(k => localStorage.getItem(k) !== null));
+      (data || []).forEach(row => {
+        if (!DATA_KEYS.includes(row.key)) return;
+        const remoteT = new Date(row.updated_at).getTime();
+        const localT = m[row.key] || 0;
+        if (remoteT > localT) {
+          localStorage.setItem(row.key, JSON.stringify(row.value));
+          m[row.key] = remoteT;
+          changed++;
+          candidates.delete(row.key);
+        } else if (remoteT === localT) {
+          candidates.delete(row.key);
+        }
+      });
+      setMeta(m);
+      candidates.forEach(k => dirty.add(k));
+      if (dirty.size) await pushDirty();
+      localStorage.setItem(LAST_KEY, String(Date.now()));
+      renderUI();
+      if (changed > 0) location.reload();
+    }
+
+    Toolkit.sync = {
+      onLocalWrite(key) {
+        if (!DATA_KEYS.includes(key)) return;
+        const m = meta();
+        m[key] = Date.now();
+        setMeta(m);
+        if (!client || !session) return;
+        dirty.add(key);
+        clearTimeout(pushTimer);
+        pushTimer = setTimeout(pushDirty, 2000);
+      }
+    };
+
+    document.getElementById('sb-save-btn').addEventListener('click', () => {
+      const url = urlInput.value.trim().replace(/\/+$/, '');
+      const anonKey = keyInput.value.trim();
+      if (!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(url)) { status('The URL should look like https://xxxx.supabase.co'); return; }
+      if (anonKey.length < 40) { status("That doesn't look like the anon public key (it's a long string starting with eyJ)."); return; }
+      config = { url, anonKey };
+      saveJSON(CONFIG_KEY, config);
+      keyInput.value = '';
+      if (initClient()) { status('Connected. Now sign in below.'); }
+      renderUI();
+    });
+
+    document.getElementById('sb-edit-btn').addEventListener('click', () => {
+      urlInput.value = config ? config.url : '';
+      config = null;
+      localStorage.removeItem(CONFIG_KEY);
+      renderUI();
+    });
+
+    document.getElementById('sb-login-btn').addEventListener('click', async () => {
+      const email = emailInput.value.trim();
+      if (!email.includes('@')) { status('Enter your email address first.'); return; }
+      status('Sending magic link…');
+      try {
+        const { error } = await client.auth.signInWithOtp({
+          email,
+          options: { emailRedirectTo: location.origin + location.pathname }
+        });
+        status(error ? 'Could not send link: ' + error.message : 'Link sent — open the email on this device and tap it.');
+      } catch (err) {
+        status('Could not send link: ' + err.message);
+      }
+    });
+
+    document.getElementById('sb-sync-btn').addEventListener('click', pullAll);
+
+    document.getElementById('sb-logout-btn').addEventListener('click', async () => {
+      await client.auth.signOut();
+      session = null;
+      status('Signed out. Your data stays on this device.');
+      renderUI();
+    });
+
+    // Reconnect pushes when the network comes back
+    window.addEventListener('online', () => { if (dirty.size) pushDirty(); });
+
+    // If a connection was saved in a previous session, reconnect now (initClient
+    // handles restoring any existing auth session and kicking off the first pull).
+    initClient();
+
+    renderUI();
   })();
 
   /* ============================================================
