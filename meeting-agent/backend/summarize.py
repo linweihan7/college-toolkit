@@ -25,14 +25,25 @@ INSTRUCTIONS = """From the transcript below, produce a JSON object with EXACTLY 
 
 - "title": a concise, specific meeting title (<= 10 words).
 - "summary": 3-6 sentence executive summary of what happened and why it matters.
-- "highlights": array of the most important points (5-10 short strings).
-- "decisions": array of decisions that were actually made (strings). [] if none.
-- "action_items": array of objects {"task","owner","due"}. Use the speaker label
-  or named person as "owner" when attributable, else "". "due" is "" if unstated.
+- "highlights": the genuinely important points, ordered MOST IMPORTANT FIRST
+  (aim for 4-8). A point counts as important only if it is one of: a decision or
+  conclusion; a commitment/action with an owner or deadline; a concrete number,
+  metric, date or status; a risk, blocker, problem or disagreement; or a change
+  of plan. DO NOT include greetings, small talk, agenda/logistics ("let's kick
+  off", "any questions"), or restatements of the topic. Prefer specifics with
+  numbers/names over vague statements. Each highlight is one short sentence.
+- "decisions": decisions that were actually made (strings). [] if none.
+- "action_items": array of {"task","owner","due"} for concrete follow-ups only.
+  Use the speaker label or named person as "owner" when attributable, else "".
+  "due" is "" if unstated. Do not invent owners or dates.
 - "topics": array of {"title","summary"} covering each major discussion topic in order.
 - "minutes_markdown": a clean, well-structured Markdown minutes document with
   sections (Summary, Attendees/Speakers if known, Key Points, Decisions,
   Action Items as a table, and a topic-by-topic breakdown).
+
+Ground every point in the transcript — never invent facts, owners, numbers or
+dates. If little of substance was said, return fewer highlights rather than
+padding with trivia.
 
 Language rule: %(lang_rule)s
 
@@ -127,6 +138,9 @@ _STOP = set("the a an and or of to in on for with is are was were be this that i
 _ACTION_EN = re.compile(r"\b(will|need to|needs to|must|schedule|follow[- ]?up|update|prepare|send|by friday|by monday|next monday|next week|due|deadline|assign)\b", re.I)
 _ACTION_ZH = re.compile(r"(需要|之前|上線|準備|寄給|發送|更新|下週|下星期|週五|截止|負責|安排|跟進|準備一份|報告)")
 _DECISION = re.compile(r"(decide|decided|agree|agreed|approved|confirm|final|決定|同意|通過|確認|拍板)", re.I)
+_RISK = re.compile(r"(blocker|block|issue|problem|risk|concern|delay|fail|unstable|broken|bug|behind|問題|風險|不穩定|延遲|阻礙|故障|錯誤|落後|卡住)", re.I)
+_NUM = re.compile(r"(\d|%|百分之|Q[1-4]|OKR|週[一二三四五六日]|星期|下週|下星期|next week|next monday|next friday|by friday|by monday|deadline|月|號)", re.I)
+_FILLER = re.compile(r"^\s*(okay|ok|alright|great|thanks|thank you|cool|sure|yeah|hi|hello|good morning|good afternoon|let'?s (kick off|get started|begin)|大家好|你好|哈囉|好的|好啊|謝謝|感謝|嗯|對|是的|沒問題)\b", re.I)
 
 
 def _sentences(segments: List[dict]) -> List[dict]:
@@ -152,21 +166,66 @@ def _local_summary(segments: List[dict], summary_language: str) -> dict:
         return {"title": "", "summary": "", "highlights": [], "decisions": [],
                 "action_items": [], "topics": [], "minutes_markdown": ""}
 
+    # Salience = keyword-frequency score (used only to break ties).
     freq = Counter(t for s in sents for t in _tokens(s["text"]))
-    def score(s):
+    sal = []
+    for s in sents:
         toks = _tokens(s["text"])
-        return sum(freq[t] for t in toks) / math.sqrt(len(toks) + 1) if toks else 0
-    ranked = sorted(range(len(sents)), key=lambda i: score(sents[i]), reverse=True)
+        sal.append(sum(freq[t] for t in toks) / math.sqrt(len(toks) + 1) if toks else 0.0)
+    max_sal = max(sal) or 1.0
 
-    top = sorted(ranked[: min(6, len(sents))])
-    summary = " ".join(sents[i]["text"] for i in top[:4])
-    highlights = [sents[i]["text"] for i in top]
+    def importance(i: int) -> float:
+        t = sents[i]["text"]
+        sc = 0.0
+        if _DECISION.search(t):
+            sc += 4
+        if _ACTION_EN.search(t) or _ACTION_ZH.search(t):
+            sc += 3
+        if _RISK.search(t):
+            sc += 3
+        if _NUM.search(t):
+            sc += 2
+        sc += 0.7 * len(re.findall(r"\b[A-Z]{2,}\b", t))  # acronyms: API, OKR, Q3
+        if _FILLER.search(t):
+            sc -= 4
+        if len(t) < 6:
+            sc -= 1
+        return sc + sal[i] / max_sal  # tie-break by salience (0..1)
 
-    decisions = [s["text"] for s in sents if _DECISION.search(s["text"])]
-    action_items = [
-        {"task": s["text"], "owner": s["speaker"] or "", "due": ""}
-        for s in sents if _ACTION_EN.search(s["text"]) or _ACTION_ZH.search(s["text"])
-    ][:12]
+    imp = [importance(i) for i in range(len(sents))]
+    order = sorted(range(len(sents)), key=lambda i: imp[i], reverse=True)
+
+    # Highlights: important lines only, de-duplicated, back in chronological order.
+    chosen, seen = [], set()
+    for i in order:
+        if imp[i] <= 0.5:
+            continue
+        key = re.sub(r"\W", "", sents[i]["text"])[:16]
+        if key in seen:
+            continue
+        seen.add(key)
+        chosen.append(i)
+        if len(chosen) >= 8:
+            break
+    if not chosen:  # nothing scored as important — fall back to most salient
+        chosen = order[: min(5, len(order))]
+
+    highlights = [sents[i]["text"] for i in sorted(chosen, key=lambda i: sents[i]["start"])]
+    summary = " ".join(sents[i]["text"] for i in sorted(chosen[:4], key=lambda i: sents[i]["start"]))
+
+    decisions, seen_d = [], set()
+    for s in sents:
+        if _DECISION.search(s["text"]) and s["text"][:16] not in seen_d:
+            seen_d.add(s["text"][:16])
+            decisions.append(s["text"])
+    action_items, seen_a = [], set()
+    for s in sents:
+        if (_ACTION_EN.search(s["text"]) or _ACTION_ZH.search(s["text"])) and not _FILLER.search(s["text"]):
+            if s["text"][:16] in seen_a:
+                continue
+            seen_a.add(s["text"][:16])
+            action_items.append({"task": s["text"], "owner": s["speaker"] or "", "due": ""})
+    action_items = action_items[:12]
 
     # Naive topic split: 2-3 equal chunks in chronological order.
     n = len(sents)
@@ -177,7 +236,7 @@ def _local_summary(segments: List[dict], summary_language: str) -> dict:
         if chunk:
             topics.append({"title": chunk[0]["text"][:24], "summary": " ".join(x["text"] for x in chunk)})
 
-    title = sents[top[0]]["text"][:40] if top else "Meeting"
+    title = sents[order[0]]["text"][:40] if order else "Meeting"
     md = ["# " + title, "", "## 摘要 / Summary", summary, ""]
     md += ["## 重點 / Highlights"] + [f"- {h}" for h in highlights] + [""]
     if decisions:
