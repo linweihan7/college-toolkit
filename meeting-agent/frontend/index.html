@@ -41,8 +41,11 @@
           </div>
           <label class="check"><input type="checkbox" id="sysAudio" /> 同時擷取電腦／分頁聲音 <span class="muted">（適用於線上會議）</span></label>
           <div id="dropzone" class="dropzone">
-            <p>或 <label class="link" for="fileInput">選擇音訊檔</label> ／ 拖曳到這裡</p>
-            <input type="file" id="fileInput" accept="audio/*,video/*" hidden />
+            <p>或 <label class="link" for="fileInput">選擇音訊／影片檔</label> ／ 拖曳到這裡</p>
+            <input type="file" id="fileInput"
+              accept="audio/*,video/*,.m4a,.mp3,.wav,.aac,.ogg,.oga,.opus,.flac,.aif,.aiff,.wma,.amr,.3gp,.mp4,.m4v,.mov,.webm,.mkv"
+              hidden />
+            <p class="muted small">支援 m4a、mp3、wav、aac、mp4、mov 等；也支援語音備忘錄與會議錄影。</p>
             <p id="fileName" class="muted small"></p>
           </div>
         </div>

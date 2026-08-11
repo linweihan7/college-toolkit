@@ -89,39 +89,57 @@ const STATUS_LABELS = { queued: "排隊中", processing: "處理中", done: "完
 const statusLabel = (s) => STATUS_LABELS[s] || s;
 
 /* ============================ Recording ============================ */
-let mediaRecorder = null, chunks = [], recStream = null, audioCtx = null, analyser = null,
-  extraStreams = [], timerInt = null, meterRAF = null, recStart = 0;
+let mediaRecorder = null, chunks = [], recStream = null, audioCtx = null, meterCtx = null,
+  analyser = null, extraStreams = [], timerInt = null, meterRAF = null, recStart = 0;
+
+// Keep audio contexts running if the tab is backgrounded during a long meeting.
+function resumeCtxs() {
+  [audioCtx, meterCtx].forEach((c) => { if (c && c.state === "suspended") c.resume().catch(() => {}); });
+}
 
 async function startRecording() {
   try {
     const includeSystem = $("sysAudio").checked;
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const dest = audioCtx.createMediaStreamDestination();
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 512;
-
     const mic = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
     });
     extraStreams = [mic];
-    audioCtx.createMediaStreamSource(mic).connect(dest);
 
+    // Record the mic stream DIRECTLY (no AudioContext in the record path) so the
+    // recording keeps running for any length even when the tab is in background.
+    // Only build a mixer when the user also captures system/tab audio.
+    let recordStream = mic;
     if (includeSystem) {
       const disp = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-      if (disp.getAudioTracks().length) audioCtx.createMediaStreamSource(disp).connect(dest);
-      else alert("未分享系統聲音 — 將僅錄製麥克風。");
       disp.getVideoTracks().forEach((t) => t.stop());
       extraStreams.push(disp);
+      if (disp.getAudioTracks().length) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const dest = audioCtx.createMediaStreamDestination();
+        audioCtx.createMediaStreamSource(mic).connect(dest);
+        audioCtx.createMediaStreamSource(disp).connect(dest);
+        recordStream = dest.stream;
+      } else {
+        alert("未分享系統聲音 — 將僅錄製麥克風。");
+      }
     }
-    audioCtx.createMediaStreamSource(dest.stream).connect(analyser);
 
-    recStream = dest.stream;
+    // Level meter runs on its OWN context, tapping the record stream. If it gets
+    // suspended in the background, only the meter pauses — never the recording.
+    meterCtx = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = meterCtx.createAnalyser();
+    analyser.fftSize = 512;
+    meterCtx.createMediaStreamSource(recordStream).connect(analyser);
+
+    recStream = recordStream;
     const mime = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((m) => MediaRecorder.isTypeSupported(m)) || "";
-    mediaRecorder = new MediaRecorder(recStream, mime ? { mimeType: mime } : undefined);
+    mediaRecorder = new MediaRecorder(recordStream, mime ? { mimeType: mime } : undefined);
     chunks = [];
+    // Flush a chunk every 5 s so a very long meeting streams to memory steadily.
     mediaRecorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
     mediaRecorder.onstop = onRecStop;
-    mediaRecorder.start(1000);
+    mediaRecorder.start(5000);
+    document.addEventListener("visibilitychange", resumeCtxs);
 
     recStart = Date.now();
     $("recBtn").disabled = true; $("stopBtn").disabled = false;
@@ -146,9 +164,11 @@ function onRecStop() {
 
 function cleanupRecording() {
   clearInterval(timerInt); cancelAnimationFrame(meterRAF);
+  document.removeEventListener("visibilitychange", resumeCtxs);
   extraStreams.forEach((s) => s.getTracks().forEach((t) => t.stop()));
   extraStreams = [];
   if (audioCtx) { audioCtx.close().catch(() => {}); audioCtx = null; }
+  if (meterCtx) { meterCtx.close().catch(() => {}); meterCtx = null; }
   $("recBtn").disabled = false; $("stopBtn").disabled = true;
   $("recBtn").textContent = "● 開始錄音";
   $("timer").textContent = "00:00";
