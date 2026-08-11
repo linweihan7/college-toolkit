@@ -12,7 +12,10 @@ deliberately choose the *Cloud API* transcription engine.
 
 1. **Record** from your microphone, and optionally the computer/tab audio of an
    online call — or drop in an existing audio/video file.
-2. **Transcribe** the full recording after the meeting, with a choice of engine:
+2. **Live captions** (optional, on by default): while you record, short audio
+   windows stream to a fast local model and captions appear within a few seconds
+   — rough by design. The accurate transcript is produced by the full pass below.
+3. **Transcribe** the full recording after the meeting, with a choice of engine:
    - **Local Whisper** (`faster-whisper large-v3`) — offline, private, free.
    - **Cloud API** (OpenAI) — no local model, chunked to handle long meetings.
    Both handle Mandarin/English code-switching.

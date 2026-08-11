@@ -40,6 +40,11 @@
             <button id="stopBtn" class="danger big" disabled>■ 停止</button>
           </div>
           <label class="check"><input type="checkbox" id="sysAudio" /> 同時擷取電腦／分頁聲音 <span class="muted">（適用於線上會議）</span></label>
+          <label class="check"><input type="checkbox" id="liveCaps" checked /> 即時字幕 <span id="liveNote" class="muted small">（邊講邊出字）</span></label>
+          <div id="liveBox" class="live-box hidden">
+            <div class="live-head"><span class="live-dot"></span> 即時字幕</div>
+            <div id="liveCaptions" class="live-captions"></div>
+          </div>
           <div id="dropzone" class="dropzone">
             <p>或 <label class="link" for="fileInput">選擇音訊／影片檔</label> ／ 拖曳到這裡</p>
             <input type="file" id="fileInput"

@@ -34,6 +34,11 @@ LOCAL_WHISPER_COMPUTE = os.getenv("LOCAL_WHISPER_COMPUTE", "int8")  # int8 | flo
 # Higher beam = more accurate, slower. 5 is a good default; try 8-10 for precision.
 LOCAL_WHISPER_BEAM = int(os.getenv("LOCAL_WHISPER_BEAM", "5"))
 
+# Live captions use a small, fast model for low latency; the accurate full pass
+# after you stop still uses LOCAL_WHISPER_MODEL (e.g. large-v3).
+LIVE_WHISPER_MODEL = os.getenv("LIVE_WHISPER_MODEL", "base")
+LIVE_WHISPER_COMPUTE = os.getenv("LIVE_WHISPER_COMPUTE", "int8")
+
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_TRANSCRIBE_MODEL = os.getenv("OPENAI_TRANSCRIBE_MODEL", "whisper-1")
 # whisper-1 has a 25 MB upload cap; we chunk cloud audio below this many seconds.
@@ -129,6 +134,11 @@ def capabilities() -> dict:
                     "reason": None,
                 },
             },
+        },
+        "live": {
+            "available": local_ok,
+            "model": LIVE_WHISPER_MODEL,
+            "reason": None if local_ok else "live captions need faster-whisper (requirements-local.txt)",
         },
         "ffmpeg": shutil.which("ffmpeg") is not None,
         "default_engine": DEFAULT_ENGINE,

@@ -42,6 +42,11 @@ async function loadCaps() {
     ? (diar.backend === "offline" ? "（離線，免金鑰）" : "（pyannote）")
     : `(${diar.reason})`;
 
+  const live = CAPS.live || { available: false };
+  $("liveCaps").checked = live.available;
+  $("liveCaps").disabled = !live.available;
+  $("liveNote").textContent = live.available ? "（邊講邊出字）" : "（需本機引擎）";
+
   // Summary AI providers (Claude / GPT / Gemini).
   const provs = CAPS.summarization.providers;
   const provLabels = { claude: "Claude", openai: "GPT (OpenAI)", gemini: "Gemini", local: "離線摘要（免金鑰）" };
@@ -91,6 +96,7 @@ const statusLabel = (s) => STATUS_LABELS[s] || s;
 /* ============================ Recording ============================ */
 let mediaRecorder = null, chunks = [], recStream = null, audioCtx = null, meterCtx = null,
   analyser = null, extraStreams = [], timerInt = null, meterRAF = null, recStart = 0;
+let liveProcessor = null, liveBuf = [], liveTimer = null, liveBusy = false, liveSR = 16000;
 
 // Keep audio contexts running if the tab is backgrounded during a long meeting.
 function resumeCtxs() {
@@ -124,12 +130,16 @@ async function startRecording() {
       }
     }
 
-    // Level meter runs on its OWN context, tapping the record stream. If it gets
-    // suspended in the background, only the meter pauses — never the recording.
-    meterCtx = new (window.AudioContext || window.webkitAudioContext)();
+    // Level meter (and live captions) run on their OWN context, tapping the
+    // record stream. If it gets suspended in the background, only the meter
+    // pauses — never the recording. Prefer 16 kHz so live PCM needs no resample.
+    try { meterCtx = new AudioContext({ sampleRate: 16000 }); }
+    catch (e) { meterCtx = new (window.AudioContext || window.webkitAudioContext)(); }
     analyser = meterCtx.createAnalyser();
     analyser.fftSize = 512;
     meterCtx.createMediaStreamSource(recordStream).connect(analyser);
+
+    if ($("liveCaps").checked && CAPS && CAPS.live && CAPS.live.available) startLive(recordStream);
 
     recStream = recordStream;
     const mime = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((m) => MediaRecorder.isTypeSupported(m)) || "";
@@ -165,6 +175,10 @@ function onRecStop() {
 function cleanupRecording() {
   clearInterval(timerInt); cancelAnimationFrame(meterRAF);
   document.removeEventListener("visibilitychange", resumeCtxs);
+  clearInterval(liveTimer); liveTimer = null;
+  if (liveProcessor) { try { liveProcessor.disconnect(); } catch (e) {} liveProcessor.onaudioprocess = null; liveProcessor = null; }
+  liveBuf = []; liveBusy = false;
+  $("liveBox").classList.add("hidden");
   extraStreams.forEach((s) => s.getTracks().forEach((t) => t.stop()));
   extraStreams = [];
   if (audioCtx) { audioCtx.close().catch(() => {}); audioCtx = null; }
@@ -195,6 +209,67 @@ function drawMeter() {
     ctx.globalAlpha = 1;
   };
   draw();
+}
+
+/* ============================ Live captions ============================ */
+function startLive(stream) {
+  liveSR = meterCtx.sampleRate;
+  const src = meterCtx.createMediaStreamSource(stream);
+  liveProcessor = meterCtx.createScriptProcessor(4096, 1, 1);
+  src.connect(liveProcessor);
+  const sink = meterCtx.createGain(); sink.gain.value = 0;         // silent sink keeps the node processing
+  liveProcessor.connect(sink); sink.connect(meterCtx.destination);
+  liveBuf = [];
+  liveProcessor.onaudioprocess = (e) => liveBuf.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+  $("liveCaptions").innerHTML = "";
+  $("liveBox").classList.remove("hidden");
+  liveTimer = setInterval(flushLive, 3500);
+}
+
+async function flushLive() {
+  if (liveBusy) return;
+  const total = liveBuf.reduce((n, a) => n + a.length, 0);
+  if (total < liveSR * 2) return;                                  // wait for >= 2 s of audio
+  const win = new Float32Array(total);
+  let off = 0;
+  for (const a of liveBuf) { win.set(a, off); off += a.length; }
+  liveBuf = [];
+  const pcm = new Int16Array(win.length);
+  for (let i = 0; i < win.length; i++) { const s = Math.max(-1, Math.min(1, win[i])); pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff; }
+
+  liveBusy = true;
+  const pend = addPending();
+  try {
+    const r = await fetch(
+      `/api/transcribe_chunk?sample_rate=${Math.round(liveSR)}&language=${encodeURIComponent($("optLanguage").value)}`,
+      { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: pcm.buffer }
+    );
+    const j = await r.json();
+    pend.remove();
+    if (j.text) appendLiveLine(j.text);
+  } catch (e) {
+    pend.remove();
+  }
+  liveBusy = false;
+}
+
+function appendLiveLine(text) {
+  const box = $("liveCaptions");
+  const el = document.createElement("div");
+  el.className = "cap";
+  el.textContent = text;
+  box.appendChild(el);
+  box.scrollTop = box.scrollHeight;
+}
+
+function addPending() {
+  const box = $("liveCaptions");
+  const el = document.createElement("div");
+  el.className = "cap pending";
+  el.textContent = "…";
+  box.appendChild(el);
+  box.scrollTop = box.scrollHeight;
+  return el;
 }
 
 /* ============================ Upload + processing ============================ */

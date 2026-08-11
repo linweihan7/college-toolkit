@@ -44,6 +44,17 @@ def init() -> None:
         c.executescript(_SCHEMA)
 
 
+def reset_stale() -> None:
+    """Mark meetings left mid-processing (e.g. by a server restart) as errored,
+    so they don't sit in 'processing' forever."""
+    with _conn() as c:
+        c.execute(
+            "UPDATE meetings SET status='error', stage='已中斷', "
+            "error='處理在完成前被中斷（例如伺服器重啟）。請刪除後重新匯入。' "
+            "WHERE status IN ('processing','queued')"
+        )
+
+
 def create_meeting(title: str, engine: str, options: dict, audio_path: Path) -> str:
     mid = uuid.uuid4().hex[:12]
     with _conn() as c:

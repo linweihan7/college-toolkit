@@ -19,6 +19,7 @@ from . import config
 
 # Cache the local model between meetings; loading large-v3 is expensive.
 _local_model = None
+_live_model = None
 
 
 def _get_local_model():
@@ -36,6 +37,33 @@ def _get_local_model():
 
 def _lang_arg(language: str) -> Optional[str]:
     return None if language == "auto" else language
+
+
+def _get_live_model():
+    global _live_model
+    if _live_model is None:
+        from faster_whisper import WhisperModel
+
+        _live_model = WhisperModel(
+            config.LIVE_WHISPER_MODEL,
+            device=config.LOCAL_WHISPER_DEVICE,
+            compute_type=config.LIVE_WHISPER_COMPUTE,
+        )
+    return _live_model
+
+
+def transcribe_window(samples, language: str = "auto", prompt: str = "") -> dict:
+    """Fast, low-latency transcription of a short 16 kHz float32 window for live
+    captions. Greedy (beam=1), no word timestamps — accuracy is refined by the
+    full pass after recording stops."""
+    model = _get_live_model()
+    seg_iter, info = model.transcribe(
+        samples, language=_lang_arg(language), initial_prompt=prompt or None,
+        beam_size=1, vad_filter=False, word_timestamps=False,
+        condition_on_previous_text=False,
+    )
+    text = "".join(s.text for s in seg_iter).strip()
+    return {"text": text, "language": info.language or ""}
 
 
 SR = 16000

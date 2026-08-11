@@ -5,11 +5,11 @@ import json
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import config, pipeline, storage, summarize
+from . import config, pipeline, storage, summarize, transcribe
 from .schemas import ProcessOptions
 
 FRONTEND = Path(__file__).resolve().parent.parent / "frontend"
@@ -20,11 +20,34 @@ app = FastAPI(title="Meeting Scribe")
 @app.on_event("startup")
 def _startup() -> None:
     storage.init()
+    storage.reset_stale()
 
 
 @app.get("/api/config")
 def get_config():
     return config.capabilities()
+
+
+@app.post("/api/transcribe_chunk")
+async def transcribe_chunk(request: Request, sample_rate: int = 16000, language: str = "auto"):
+    """Live captions: transcribe one short raw-PCM (int16 mono) window."""
+    if not config.capabilities()["live"]["available"]:
+        raise HTTPException(400, "Live captions need the local engine (faster-whisper)")
+    import numpy as np
+
+    raw = await request.body()
+    if len(raw) < 2:
+        return {"text": ""}
+    pcm = np.frombuffer(raw, dtype="<i2").astype("float32") / 32768.0
+    if sample_rate != 16000:
+        import librosa
+
+        pcm = librosa.resample(pcm, orig_sr=sample_rate, target_sr=16000)
+    lang = language if language in ("en", "zh") else "auto"
+    try:
+        return transcribe.transcribe_window(pcm, lang)
+    except Exception as exc:  # noqa: BLE001 - never break the live stream
+        return {"text": "", "error": str(exc)}
 
 
 @app.post("/api/meetings")
