@@ -1,0 +1,7 @@
+# Local (offline) transcription + on-device speaker diarization.
+# Heavier install (pulls in PyTorch). Only needed if you use the "local" engine
+# or want speaker labels.
+faster-whisper>=1.0.0
+pyannote.audio>=3.1
+torch>=2.1
+torchaudio>=2.1

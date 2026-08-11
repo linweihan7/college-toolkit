@@ -1,0 +1,14 @@
+# Core server + cloud transcription + summarization.
+# For fully-offline/local transcription and speaker labels also install
+# requirements-local.txt.
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+python-dotenv>=1.0
+pydantic>=2.6
+# Summarization providers — install the ones you'll use (all listed for convenience).
+anthropic>=0.40
+openai>=1.30
+google-genai>=0.3
+# Simplified -> Traditional Chinese conversion of recognized Mandarin.
+opencc-python-reimplemented>=0.1.7

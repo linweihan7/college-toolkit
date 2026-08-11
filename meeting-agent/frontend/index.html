@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>會議記錄員</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <aside id="sidebar">
+    <div class="brand">
+      <span class="logo">◉</span>
+      <div>
+        <h1>會議記錄員</h1>
+        <p class="tagline">國語 ＋ 英文 · 精準會議記錄</p>
+      </div>
+    </div>
+    <button id="newBtn" class="primary block">＋ 新增會議</button>
+    <div id="capsBar" class="caps"></div>
+    <nav id="meetingList" class="list"></nav>
+    <footer class="side-foot">全程於 <code>localhost</code> 本機處理</footer>
+  </aside>
+
+  <main id="main">
+    <!-- ===== New / record view ===== -->
+    <section id="newView" class="view">
+      <header class="view-head">
+        <h2>新增會議</h2>
+        <p class="muted">即時錄音，或拖入既有的音訊檔。除非選用雲端引擎，否則資料不會離開這台機器。</p>
+      </header>
+
+      <div class="grid">
+        <div class="card record-card">
+          <div class="rec-visual">
+            <canvas id="meter" width="320" height="72"></canvas>
+            <div id="timer" class="timer">00:00</div>
+          </div>
+          <div class="rec-controls">
+            <button id="recBtn" class="primary big">● 開始錄音</button>
+            <button id="stopBtn" class="danger big" disabled>■ 停止</button>
+          </div>
+          <label class="check"><input type="checkbox" id="sysAudio" /> 同時擷取電腦／分頁聲音 <span class="muted">（適用於線上會議）</span></label>
+          <div id="dropzone" class="dropzone">
+            <p>或 <label class="link" for="fileInput">選擇音訊檔</label> ／ 拖曳到這裡</p>
+            <input type="file" id="fileInput" accept="audio/*,video/*" hidden />
+            <p id="fileName" class="muted small"></p>
+          </div>
+        </div>
+
+        <div class="card options-card">
+          <h3>選項</h3>
+          <label class="field"><span>標題</span>
+            <input type="text" id="optTitle" placeholder="例如：每週產品同步會議" />
+          </label>
+          <label class="field"><span>轉錄引擎</span>
+            <select id="optEngine"></select>
+          </label>
+          <label class="field"><span>會議語言</span>
+            <select id="optLanguage">
+              <option value="auto">自動（國語 ＋ 英文）</option>
+              <option value="en">僅英文</option>
+              <option value="zh">僅國語</option>
+            </select>
+          </label>
+          <label class="field"><span>摘要語言</span>
+            <select id="optSummaryLang">
+              <option value="zh">繁體中文</option>
+              <option value="auto">依會議語言</option>
+              <option value="en">English</option>
+            </select>
+          </label>
+          <label class="field"><span>摘要 AI <span id="provNote" class="muted small"></span></span>
+            <select id="optSummaryProvider"></select>
+          </label>
+          <label class="check"><input type="checkbox" id="optDiarize" checked /> 標註發言者 <span id="diarNote" class="muted small"></span></label>
+          <label class="field"><span>預期發言人數 <span class="muted small">（選填）</span></span>
+            <input type="number" id="optNumSpeakers" min="1" max="20" placeholder="自動" />
+          </label>
+          <label class="field"><span>需正確拼寫的名稱／專有名詞 <span class="muted small">（選填）</span></span>
+            <textarea id="optVocab" rows="2" placeholder="Acme Corp、王經理、Kubernetes、Q3 OKRs"></textarea>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Processing view ===== -->
+    <section id="procView" class="view hidden">
+      <div class="card center-card">
+        <h2 id="procTitle">處理中…</h2>
+        <div class="progress"><div id="progressBar" class="bar"></div></div>
+        <p id="procStage" class="muted"></p>
+      </div>
+    </section>
+
+    <!-- ===== Meeting detail view ===== -->
+    <section id="meetingView" class="view hidden">
+      <header class="view-head meeting-head">
+        <div>
+          <h2 id="mTitle"></h2>
+          <div id="mBadges" class="badges"></div>
+        </div>
+        <div class="head-actions">
+          <button id="exportMd" class="ghost">⬇ 會議記錄 .md</button>
+          <button id="exportTxt" class="ghost">⬇ 逐字稿 .txt</button>
+          <button id="copyBtn" class="ghost">⧉ 複製摘要</button>
+          <button id="deleteBtn" class="ghost danger-text">🗑</button>
+        </div>
+      </header>
+      <audio id="player" controls class="player"></audio>
+      <div id="errorBox" class="error hidden"></div>
+
+      <div class="tabs">
+        <button class="tab active" data-tab="summary">重點摘要</button>
+        <button class="tab" data-tab="transcript">逐字稿</button>
+        <button class="tab" data-tab="minutes">會議記錄</button>
+      </div>
+
+      <div id="tab-summary" class="tabpane"></div>
+      <div id="tab-transcript" class="tabpane hidden">
+        <input type="text" id="tSearch" class="search" placeholder="搜尋逐字稿…" />
+        <div id="transcriptBody"></div>
+      </div>
+      <div id="tab-minutes" class="tabpane hidden markdown"></div>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
