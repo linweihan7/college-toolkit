@@ -77,7 +77,10 @@ def _has_module(name: str) -> bool:
 def capabilities() -> dict:
     """Report which engines/features are actually usable right now."""
     local_ok = _has_module("faster_whisper")
-    diar_ok = _has_module("pyannote.audio") and bool(HUGGINGFACE_TOKEN)
+    diar_pyannote = _has_module("pyannote.audio") and bool(HUGGINGFACE_TOKEN)
+    diar_offline = _has_module("resemblyzer") and _has_module("sklearn")
+    diar_ok = diar_pyannote or diar_offline
+    diar_backend = "pyannote" if diar_pyannote else ("offline" if diar_offline else None)
     return {
         "engines": {
             "local": {
@@ -93,9 +96,10 @@ def capabilities() -> dict:
         },
         "diarization": {
             "available": diar_ok,
+            "backend": diar_backend,
             "reason": None
             if diar_ok
-            else "needs pyannote.audio + HUGGINGFACE_TOKEN (accept model terms on huggingface.co)",
+            else "install resemblyzer + scikit-learn (offline, no key), or pyannote.audio + HUGGINGFACE_TOKEN",
         },
         "summarization": {
             "default": SUMMARY_PROVIDER,

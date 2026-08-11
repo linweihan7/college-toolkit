@@ -47,7 +47,7 @@ def _run(meeting_id: str) -> None:
         speakers: list[str] = []
         if opts.get("diarize") and diarize.available() and segments:
             _progress(meeting_id, "辨識發言者中", 60)
-            turns = diarize.diarize(wav, opts.get("num_speakers"))
+            turns = diarize.diarize(wav, opts.get("num_speakers"), segments=segments)
             segments = diarize.apply_speakers(segments, turns)
             speakers = sorted({s["speaker"] for s in segments if s.get("speaker")})
             diarized = True

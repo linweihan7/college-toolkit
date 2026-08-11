@@ -38,7 +38,9 @@ async function loadCaps() {
   const diar = CAPS.diarization;
   $("optDiarize").checked = diar.available;
   $("optDiarize").disabled = !diar.available;
-  $("diarNote").textContent = diar.available ? "" : `(${diar.reason})`;
+  $("diarNote").textContent = diar.available
+    ? (diar.backend === "offline" ? "（離線，免金鑰）" : "（pyannote）")
+    : `(${diar.reason})`;
 
   // Summary AI providers (Claude / GPT / Gemini).
   const provs = CAPS.summarization.providers;
