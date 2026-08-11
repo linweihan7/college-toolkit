@@ -35,22 +35,30 @@ def _run(meeting_id: str) -> None:
         duration = audio.wav_duration(wav)
         storage.update(meeting_id, duration=duration)
 
+        # Word timestamps are only needed for speaker diarization; skipping them
+        # otherwise is markedly faster.
+        want_diarize = bool(opts.get("diarize") and diarize.available())
         _progress(meeting_id, "轉錄中", 20)
         tr = transcribe.transcribe(
             wav, engine=m["engine"], language=opts.get("language", "auto"),
-            prompt=opts.get("vocabulary", ""),
+            prompt=opts.get("vocabulary", ""), want_words=want_diarize,
         )
         segments = textconv.convert_segments(tr["segments"])
         language = tr["language"]
 
         diarized = False
         speakers: list[str] = []
-        if opts.get("diarize") and diarize.available() and segments:
+        if want_diarize and segments:
             _progress(meeting_id, "辨識發言者中", 60)
             turns = diarize.diarize(wav, opts.get("num_speakers"), segments=segments)
             segments = diarize.apply_speakers(segments, turns)
             speakers = sorted({s["speaker"] for s in segments if s.get("speaker")})
             diarized = True
+
+        # Per-word data is not needed after diarization; dropping it keeps the
+        # stored result small so meetings open instantly.
+        for s in segments:
+            s.pop("words", None)
 
         summary = None
         provider = config.resolve_summary_provider(opts.get("summary_provider", ""))

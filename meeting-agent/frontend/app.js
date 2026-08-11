@@ -274,6 +274,11 @@ function addPending() {
 
 /* ============================ Upload + processing ============================ */
 async function uploadAudio(blob, filename) {
+  if (!blob || blob.size === 0) {
+    alert("錄音／檔案是空的，未儲存。請確認麥克風權限或檔案內容後再試一次。");
+    show("newView");
+    return;
+  }
   const opts = {
     title: $("optTitle").value.trim(),
     engine: $("optEngine").value,
@@ -298,7 +303,10 @@ async function uploadAudio(blob, filename) {
     pollStatus(id);
     loadList();
   } catch (e) {
-    $("procStage").textContent = "錯誤：" + (e.detail || e.message || JSON.stringify(e));
+    const msg = e.detail || e.message || JSON.stringify(e);
+    $("procStage").textContent = "錯誤：" + msg;
+    alert("儲存失敗：" + msg);
+    show("newView");
   }
 }
 

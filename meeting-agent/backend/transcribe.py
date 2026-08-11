@@ -84,10 +84,10 @@ def _collect(seg_iter, offset: float = 0.0) -> list:
     return out
 
 
-def _transcribe_whole(model, audio, lang, prompt: str) -> dict:
+def _transcribe_whole(model, audio, lang, prompt: str, want_words: bool = True) -> dict:
     seg_iter, info = model.transcribe(
         audio, language=lang, initial_prompt=prompt or None,
-        word_timestamps=True, vad_filter=True, beam_size=config.LOCAL_WHISPER_BEAM,
+        word_timestamps=want_words, vad_filter=True, beam_size=config.LOCAL_WHISPER_BEAM,
     )
     return {"language": info.language or (lang or ""), "segments": _collect(seg_iter)}
 
@@ -106,7 +106,7 @@ def _group_chunks(speech, max_samples, gap_samples):
     return chunks
 
 
-def transcribe_local(wav_path: Path, language: str, prompt: str) -> dict:
+def transcribe_local(wav_path: Path, language: str, prompt: str, want_words: bool = True) -> dict:
     from faster_whisper.audio import decode_audio
     from faster_whisper.vad import VadOptions, get_speech_timestamps
 
@@ -114,23 +114,23 @@ def transcribe_local(wav_path: Path, language: str, prompt: str) -> dict:
     audio = decode_audio(str(wav_path), sampling_rate=SR)
     forced = _lang_arg(language)
 
-    # A forced language needs no per-chunk detection.
+    # A forced language needs no per-chunk detection (one fast pass).
     if forced is not None:
-        return _transcribe_whole(model, audio, forced, prompt)
+        return _transcribe_whole(model, audio, forced, prompt, want_words)
 
     # Auto: detect language per speech chunk so EN and 中文 utterances are each
     # transcribed correctly even when they alternate across the meeting.
     vad_opts = VadOptions(min_silence_duration_ms=300, speech_pad_ms=150, max_speech_duration_s=25)
     speech = get_speech_timestamps(audio, vad_options=vad_opts)
     if not speech:
-        return _transcribe_whole(model, audio, None, prompt)
+        return _transcribe_whole(model, audio, None, prompt, want_words)
 
     # Keep VAD's utterance boundaries (it already split on >=300 ms silences);
     # only glue back spans separated by a breath (<=0.1 s). This way a language
     # switch between utterances is detected per utterance, not averaged away.
     chunks = _group_chunks(speech, max_samples=25 * SR, gap_samples=int(0.1 * SR))
     segments, langs = [], []
-    common = dict(initial_prompt=prompt or None, word_timestamps=True,
+    common = dict(initial_prompt=prompt or None, word_timestamps=want_words,
                   vad_filter=False, beam_size=config.LOCAL_WHISPER_BEAM,
                   condition_on_previous_text=False)
     for cs, ce in chunks:
@@ -164,10 +164,11 @@ def _slice_wav(src: Path, start_s: float, end_s: float, dst: Path) -> Path:
     return dst
 
 
-def transcribe_cloud(wav_path: Path, language: str, prompt: str) -> dict:
+def transcribe_cloud(wav_path: Path, language: str, prompt: str, want_words: bool = True) -> dict:
     from openai import OpenAI
 
     client = OpenAI(api_key=config.OPENAI_API_KEY)
+    granularities = ["segment", "word"] if want_words else ["segment"]
 
     with wave.open(str(wav_path), "rb") as wf:
         duration = wf.getnframes() / float(wf.getframerate() or 16000)
@@ -189,7 +190,7 @@ def transcribe_cloud(wav_path: Path, language: str, prompt: str) -> dict:
                     model=config.OPENAI_TRANSCRIBE_MODEL,
                     file=f,
                     response_format="verbose_json",
-                    timestamp_granularities=["segment", "word"],
+                    timestamp_granularities=granularities,
                 )
                 if language != "auto":
                     kwargs["language"] = language
@@ -215,7 +216,7 @@ def transcribe_cloud(wav_path: Path, language: str, prompt: str) -> dict:
     return {"language": detected, "segments": all_segments}
 
 
-def transcribe(wav_path: Path, engine: str, language: str, prompt: str) -> dict:
+def transcribe(wav_path: Path, engine: str, language: str, prompt: str, want_words: bool = True) -> dict:
     if engine == "cloud":
-        return transcribe_cloud(wav_path, language, prompt)
-    return transcribe_local(wav_path, language, prompt)
+        return transcribe_cloud(wav_path, language, prompt, want_words)
+    return transcribe_local(wav_path, language, prompt, want_words)
