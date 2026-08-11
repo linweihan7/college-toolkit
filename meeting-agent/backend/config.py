@@ -30,7 +30,9 @@ DB_PATH = DATA_DIR / "meetings.db"
 DEFAULT_ENGINE = os.getenv("DEFAULT_ENGINE", "local")
 LOCAL_WHISPER_MODEL = os.getenv("LOCAL_WHISPER_MODEL", "large-v3")
 LOCAL_WHISPER_DEVICE = os.getenv("LOCAL_WHISPER_DEVICE", "cpu")  # cpu | cuda
-LOCAL_WHISPER_COMPUTE = os.getenv("LOCAL_WHISPER_COMPUTE", "int8")  # int8 | float16 | float32
+LOCAL_WHISPER_COMPUTE = os.getenv("LOCAL_WHISPER_COMPUTE", "int8")  # int8 | float32 (more precise, slower) | float16 (GPU)
+# Higher beam = more accurate, slower. 5 is a good default; try 8-10 for precision.
+LOCAL_WHISPER_BEAM = int(os.getenv("LOCAL_WHISPER_BEAM", "5"))
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_TRANSCRIBE_MODEL = os.getenv("OPENAI_TRANSCRIBE_MODEL", "whisper-1")

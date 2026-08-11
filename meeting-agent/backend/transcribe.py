@@ -59,7 +59,7 @@ def _collect(seg_iter, offset: float = 0.0) -> list:
 def _transcribe_whole(model, audio, lang, prompt: str) -> dict:
     seg_iter, info = model.transcribe(
         audio, language=lang, initial_prompt=prompt or None,
-        word_timestamps=True, vad_filter=True, beam_size=5,
+        word_timestamps=True, vad_filter=True, beam_size=config.LOCAL_WHISPER_BEAM,
     )
     return {"language": info.language or (lang or ""), "segments": _collect(seg_iter)}
 
@@ -103,7 +103,8 @@ def transcribe_local(wav_path: Path, language: str, prompt: str) -> dict:
     chunks = _group_chunks(speech, max_samples=25 * SR, gap_samples=int(0.1 * SR))
     segments, langs = [], []
     common = dict(initial_prompt=prompt or None, word_timestamps=True,
-                  vad_filter=False, beam_size=5, condition_on_previous_text=False)
+                  vad_filter=False, beam_size=config.LOCAL_WHISPER_BEAM,
+                  condition_on_previous_text=False)
     for cs, ce in chunks:
         clip = audio[cs:ce]
         seg_iter, info = model.transcribe(clip, language=None, **common)

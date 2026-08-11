@@ -140,17 +140,48 @@ _ACTION_ZH = re.compile(r"(需要|之前|上線|準備|寄給|發送|更新|下�
 _DECISION = re.compile(r"(decide|decided|agree|agreed|approved|confirm|final|決定|同意|通過|確認|拍板)", re.I)
 _RISK = re.compile(r"(blocker|block|issue|problem|risk|concern|delay|fail|unstable|broken|bug|behind|問題|風險|不穩定|延遲|阻礙|故障|錯誤|落後|卡住)", re.I)
 _NUM = re.compile(r"(\d|%|百分之|Q[1-4]|OKR|週[一二三四五六日]|星期|下週|下星期|next week|next monday|next friday|by friday|by monday|deadline|月|號)", re.I)
-_FILLER = re.compile(r"^\s*(okay|ok|alright|great|thanks|thank you|cool|sure|yeah|hi|hello|good morning|good afternoon|let'?s (kick off|get started|begin)|大家好|你好|哈囉|好的|好啊|謝謝|感謝|嗯|對|是的|沒問題)\b", re.I)
+_FILLER_WORDS = re.compile(
+    r"(還不錯|沒有了|謝謝大家|謝謝|感謝|大家好|你好|哈囉|好的|好啊|沒問題|我們開始吧|開始吧|嗯+|對|是的|"
+    r"okay|ok|alright|great|thanks|thank you|cool|sure|yeah|hi|hello|everyone|good (morning|afternoon|evening)|"
+    r"how was your weekend|thanks for joining|joining|anything else|before we wrap up|wrap up|"
+    r"let'?s (kick off|get started|begin))",
+    re.I,
+)
+
+
+def _content_len(text: str) -> int:
+    """Characters left after stripping courtesy words + punctuation — a proxy for
+    how much substance a line carries."""
+    t = _FILLER_WORDS.sub("", text)
+    t = re.sub(r"[\s，。,.\?？!！、；;:~\-]+", "", t)
+    return len(t)
+
+
+def _is_filler(text: str) -> bool:
+    """True only when almost nothing remains after removing courtesy words —
+    e.g. '對,好的' or 'Great, thanks.' — not a real point that merely opens with one."""
+    return _content_len(text) < 6
 
 
 def _sentences(segments: List[dict]) -> List[dict]:
-    out = []
+    raw = []
     for seg in segments:
         for part in re.split(r"(?<=[。！？!?\.])\s*", seg.get("text", "")):
             part = part.strip()
             if len(part) >= 2:
-                out.append({"text": part, "speaker": seg.get("speaker"), "start": seg["start"]})
-    return out
+                raw.append({"text": part, "speaker": seg.get("speaker"), "start": seg["start"]})
+    # Glue a short English fragment ("One blocker.") onto the next sentence of the
+    # same speaker, so a single point isn't split across two highlights.
+    merged: List[dict] = []
+    for s in raw:
+        prev = merged[-1] if merged else None
+        if prev and prev["speaker"] == s["speaker"]:
+            ascii_ratio = len(re.sub(r"[^\x00-\x7f]", "", prev["text"])) / max(1, len(prev["text"]))
+            if ascii_ratio > 0.6 and len(re.findall(r"[A-Za-z]+", prev["text"])) <= 2:
+                prev["text"] = (prev["text"].rstrip() + " " + s["text"]).strip()
+                continue
+        merged.append(dict(s))
+    return merged
 
 
 def _tokens(text: str) -> List[str]:
@@ -186,10 +217,8 @@ def _local_summary(segments: List[dict], summary_language: str) -> dict:
         if _NUM.search(t):
             sc += 2
         sc += 0.7 * len(re.findall(r"\b[A-Z]{2,}\b", t))  # acronyms: API, OKR, Q3
-        if _FILLER.search(t):
-            sc -= 4
-        if len(t) < 6:
-            sc -= 1
+        if _is_filler(t):
+            sc -= 6
         return sc + sal[i] / max_sal  # tie-break by salience (0..1)
 
     imp = [importance(i) for i in range(len(sents))]
@@ -198,7 +227,7 @@ def _local_summary(segments: List[dict], summary_language: str) -> dict:
     # Highlights: important lines only, de-duplicated, back in chronological order.
     chosen, seen = [], set()
     for i in order:
-        if imp[i] <= 0.5:
+        if imp[i] <= 0.5 or _is_filler(sents[i]["text"]):
             continue
         key = re.sub(r"\W", "", sents[i]["text"])[:16]
         if key in seen:
@@ -220,7 +249,7 @@ def _local_summary(segments: List[dict], summary_language: str) -> dict:
             decisions.append(s["text"])
     action_items, seen_a = [], set()
     for s in sents:
-        if (_ACTION_EN.search(s["text"]) or _ACTION_ZH.search(s["text"])) and not _FILLER.search(s["text"]):
+        if (_ACTION_EN.search(s["text"]) or _ACTION_ZH.search(s["text"])) and not _is_filler(s["text"]):
             if s["text"][:16] in seen_a:
                 continue
             seen_a.add(s["text"][:16])
