@@ -499,18 +499,41 @@ function renderSummary(s) {
   wireSummaryToolbar();
 }
 
+let transcriptView = "clean";   // clean | raw | compare (only when AI-cleaned)
+
 function renderTranscript(segments) {
   const body = $("transcriptBody");
   if (!segments.length) { body.innerHTML = `<p class="muted">尚無逐字稿。</p>`; return; }
+  const hasClean = segments.some((s) => s.clean);
   const speakers = [...new Set(segments.map((s) => s.speaker).filter(Boolean))];
-  body.innerHTML = segments.map((s) => {
-    const idx = s.speaker ? speakers.indexOf(s.speaker) % 6 : 0;
-    const spk = s.speaker ? `<span class="spk spk-${idx}">${esc(s.speaker)}</span> ` : "";
+  const spanOf = (s) => {
+    if (!s.speaker) return "";
+    return `<span class="spk spk-${speakers.indexOf(s.speaker) % 6}">${esc(s.speaker)}</span> `;
+  };
+  const toolbar = hasClean ? `<div class="tview">
+    <button data-v="clean" class="${transcriptView === "clean" ? "active" : ""}">AI 校對</button>
+    <button data-v="raw" class="${transcriptView === "raw" ? "active" : ""}">原始</button>
+    <button data-v="compare" class="${transcriptView === "compare" ? "active" : ""}">對照</button>
+  </div>` : "";
+
+  const rows = segments.map((s) => {
+    const spk = spanOf(s), raw = esc(s.text), cln = esc(s.clean || s.text);
+    let inner;
+    if (hasClean && transcriptView === "compare") {
+      inner = `<div class="cmp2"><div class="raw">${spk}${raw}</div><div class="cln">${spk}${cln}</div></div>`;
+    } else {
+      inner = spk + ((hasClean && transcriptView === "clean") ? cln : raw);
+    }
     return `<div class="turn"><span class="ts" data-t="${s.start}">${fmtTime(s.start)}</span>
-      <div class="body">${spk}${esc(s.text)}</div></div>`;
+      <div class="body">${inner}</div></div>`;
   }).join("");
+
+  body.innerHTML = toolbar + rows;
   body.querySelectorAll(".ts").forEach((n) => n.onclick = () => {
     const p = $("player"); p.currentTime = Number(n.dataset.t); p.play();
+  });
+  body.querySelectorAll(".tview button").forEach((b) => b.onclick = () => {
+    transcriptView = b.dataset.v; renderTranscript(segments);
   });
 }
 
@@ -557,7 +580,7 @@ $("exportMd").onclick = () => withResult((m, r) => download(
   slug(m.title) + ".md", (r.summary && r.summary.minutes_markdown) || "尚無會議記錄。", "text/markdown"));
 $("exportTxt").onclick = () => withResult((m, r) => download(
   slug(m.title) + ".txt", (r.segments || []).map((s) =>
-    `[${fmtTime(s.start)}] ${s.speaker ? s.speaker + ": " : ""}${s.text}`).join("\n")));
+    `[${fmtTime(s.start)}] ${s.speaker ? s.speaker + ": " : ""}${s.clean || s.text}`).join("\n")));
 $("copyBtn").onclick = () => withResult((m, r) => {
   const s = r.summary || {};
   const txt = [s.summary, "", "Highlights:", ...(s.highlights || []).map((h) => "• " + h)].join("\n");
@@ -571,6 +594,7 @@ $("cleanupBtn").onclick = async () => {
   try {
     await api(`/api/meetings/${currentMeetingId}/cleanup?provider=${prov}`, { method: "POST" });
     const m = await api(`/api/meetings/${currentMeetingId}`);
+    transcriptView = "clean";
     renderMeeting(m); switchTab("transcript");
   } catch (e) {
     alert("AI 校對失敗：" + (e.detail || e.message || JSON.stringify(e)));

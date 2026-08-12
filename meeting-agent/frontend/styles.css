@@ -134,6 +134,13 @@ table.ai th { color: var(--muted); font-weight: 600; font-size: 11.5px; text-tra
 
 /* Transcript */
 .search { max-width: 360px; margin-bottom: 16px; }
+.tview { display: inline-flex; gap: 2px; margin-bottom: 14px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.tview button { background: var(--panel); border: none; border-radius: 0; padding: 6px 14px; color: var(--muted); font-size: 12.5px; }
+.tview button.active { background: var(--accent); color: var(--accent-ink); }
+.cmp2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.cmp2 .raw { color: var(--muted); }
+.cmp2 .cln { color: var(--ink); }
+@media (max-width: 720px) { .cmp2 { grid-template-columns: 1fr; } }
 .turn { display: flex; gap: 12px; padding: 8px 0; line-height: 1.6; }
 .turn .ts { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; cursor: pointer; flex-shrink: 0; width: 62px; padding-top: 2px; }
 .turn .ts:hover { color: var(--accent); }

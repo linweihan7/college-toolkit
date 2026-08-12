@@ -81,7 +81,7 @@ def cleanup_meeting(mid: str, provider: str = ""):
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(502, f"{prov} cleanup failed: {exc}")
     for s, c in zip(segs, cleaned):
-        s["text"] = c
+        s["clean"] = c            # keep the raw text; store the AI version alongside
     result["cleaned_by"] = prov
     storage.update(mid, result=result)
     return {"ok": True, "provider": prov}
