@@ -28,10 +28,10 @@ DB_PATH = DATA_DIR / "meetings.db"
 # --- Transcription -----------------------------------------------------------
 # "local" -> faster-whisper on this machine; "cloud" -> OpenAI transcription API.
 DEFAULT_ENGINE = os.getenv("DEFAULT_ENGINE", "local")
-# Default to "small": a good speed/accuracy balance on CPU (roughly real-time).
-# Set LOCAL_WHISPER_MODEL=medium or large-v3 for higher accuracy (slower on CPU),
-# or base/tiny for maximum speed.
-LOCAL_WHISPER_MODEL = os.getenv("LOCAL_WHISPER_MODEL", "small")
+# Default to "large-v3" — the most accurate model. With a forced language it runs
+# a single efficient pass (~0.5x real-time on CPU here, so a 60-min meeting takes
+# ~25-35 min). Set LOCAL_WHISPER_MODEL=medium or small to trade accuracy for speed.
+LOCAL_WHISPER_MODEL = os.getenv("LOCAL_WHISPER_MODEL", "large-v3")
 LOCAL_WHISPER_DEVICE = os.getenv("LOCAL_WHISPER_DEVICE", "cpu")  # cpu | cuda
 LOCAL_WHISPER_COMPUTE = os.getenv("LOCAL_WHISPER_COMPUTE", "int8")  # int8 | float32 (more precise, slower) | float16 (GPU)
 # Higher beam = more accurate, slower. 5 is a good default; try 8-10 for precision.

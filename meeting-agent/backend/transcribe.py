@@ -85,17 +85,27 @@ def _collect(seg_iter, offset: float = 0.0) -> list:
 
 
 def _transcribe_whole(model, audio, lang, prompt: str, want_words: bool = True) -> dict:
-    # Bias toward Chinese output (fewer stray-English hallucinations) when the
-    # meeting is forced to Mandarin and the user gave no custom vocabulary.
-    if lang == "zh" and not prompt:
-        prompt = "以下是一段普通話會議的逐字稿。"
     seg_iter, info = model.transcribe(
         audio, language=lang, initial_prompt=prompt or None,
         word_timestamps=want_words, vad_filter=True, beam_size=config.LOCAL_WHISPER_BEAM,
-        condition_on_previous_text=False,   # avoid hallucination loops
+        condition_on_previous_text=False,     # helps recover from repetition loops
+        compression_ratio_threshold=2.2,      # discard degenerate/looping output
         no_speech_threshold=0.6,
     )
     return {"language": info.language or (lang or ""), "segments": _collect(seg_iter)}
+
+
+def _collapse_repeats(segments: list) -> list:
+    """Collapse consecutive identical short segments (e.g. a hallucinated
+    '嗨嗨嗨…' loop on unclear audio) into one, extending its time span."""
+    out: list = []
+    for s in segments:
+        t = s["text"].strip()
+        if out and t == out[-1]["text"].strip() and len(t) <= 8:
+            out[-1]["end"] = s["end"]
+            continue
+        out.append(s)
+    return out
 
 
 def _group_chunks(speech, max_samples, gap_samples):
@@ -223,6 +233,7 @@ def transcribe_cloud(wav_path: Path, language: str, prompt: str, want_words: boo
 
 
 def transcribe(wav_path: Path, engine: str, language: str, prompt: str, want_words: bool = True) -> dict:
-    if engine == "cloud":
-        return transcribe_cloud(wav_path, language, prompt, want_words)
-    return transcribe_local(wav_path, language, prompt, want_words)
+    res = transcribe_cloud(wav_path, language, prompt, want_words) if engine == "cloud" \
+        else transcribe_local(wav_path, language, prompt, want_words)
+    res["segments"] = _collapse_repeats(res["segments"])
+    return res
