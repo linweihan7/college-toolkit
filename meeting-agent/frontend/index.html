@@ -63,9 +63,9 @@
           </label>
           <label class="field"><span>會議語言</span>
             <select id="optLanguage">
+              <option value="zh" selected>僅國語（繁體中文）</option>
               <option value="auto">自動（國語 ＋ 英文）</option>
               <option value="en">僅英文</option>
-              <option value="zh">僅國語</option>
             </select>
           </label>
           <label class="field"><span>摘要語言</span>
@@ -106,6 +106,7 @@
           <div id="mBadges" class="badges"></div>
         </div>
         <div class="head-actions">
+          <button id="retransBtn" class="ghost">↻ 重新轉錄（國語）</button>
           <button id="exportMd" class="ghost">⬇ 會議記錄 .md</button>
           <button id="exportTxt" class="ghost">⬇ 逐字稿 .txt</button>
           <button id="copyBtn" class="ghost">⧉ 複製摘要</button>

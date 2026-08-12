@@ -133,6 +133,32 @@ def resummarize(mid: str, provider: str = ""):
     return {"summary": summary, "provider": prov}
 
 
+@app.post("/api/meetings/{mid}/retranscribe")
+def retranscribe(mid: str, language: str = "", diarize: str = "", num_speakers: int = -1):
+    """Re-run the full pipeline on the already-saved audio, optionally changing
+    language / diarization — e.g. to redo an auto-detected meeting as zh only."""
+    import json as _json
+
+    m = storage.get(mid)
+    if not m:
+        raise HTTPException(404, "Not found")
+    if not Path(m["audio_path"]).exists():
+        raise HTTPException(400, "Audio file no longer available")
+    opts = m["options"]
+    if language:
+        opts["language"] = language
+    if diarize in ("true", "false"):
+        opts["diarize"] = diarize == "true"
+    if num_speakers >= 0:
+        opts["num_speakers"] = num_speakers or None
+    storage.update(
+        mid, options_json=_json.dumps(opts), status="queued", stage="排隊中",
+        progress=0, error=None, result=None,
+    )
+    pipeline.submit(mid)
+    return {"id": mid}
+
+
 @app.post("/api/meetings/{mid}/compare")
 def compare(mid: str, providers: str = ""):
     """Summarize the same transcript with several AIs so they can be compared

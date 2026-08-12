@@ -9,8 +9,10 @@ from pydantic import BaseModel, Field
 class ProcessOptions(BaseModel):
     title: str = ""
     engine: Literal["local", "cloud"] = "local"
-    # "auto" lets Whisper decide; otherwise force one of the supported languages.
-    language: Literal["auto", "en", "zh"] = "auto"
+    # Default to Mandarin: forcing one language avoids the English hallucinations
+    # that per-window auto-detection produces on Chinese meetings. "auto" only
+    # for genuinely mixed EN/中文 meetings.
+    language: Literal["auto", "en", "zh"] = "zh"
     diarize: bool = True
     num_speakers: Optional[int] = None  # hint; None = auto-detect
     # Default to Traditional Chinese summaries (this app is zh-Hant first).

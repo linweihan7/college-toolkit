@@ -517,6 +517,15 @@ $("copyBtn").onclick = () => withResult((m, r) => {
   const txt = [s.summary, "", "Highlights:", ...(s.highlights || []).map((h) => "• " + h)].join("\n");
   navigator.clipboard.writeText(txt).then(() => flash($("copyBtn"), "已複製！"));
 });
+$("retransBtn").onclick = async () => {
+  if (!confirm("以國語（繁體中文）重新轉錄這場會議？會覆蓋現有逐字稿與摘要。")) return;
+  try {
+    await api(`/api/meetings/${currentMeetingId}/retranscribe?language=zh`, { method: "POST" });
+    show("procView"); pollStatus(currentMeetingId); loadList();
+  } catch (e) {
+    alert("重新轉錄失敗：" + (e.detail || e.message || JSON.stringify(e)));
+  }
+};
 $("deleteBtn").onclick = async () => {
   if (!confirm("確定要永久刪除這場會議及其音訊嗎？")) return;
   await api(`/api/meetings/${currentMeetingId}`, { method: "DELETE" });

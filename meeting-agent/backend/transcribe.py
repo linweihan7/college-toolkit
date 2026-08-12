@@ -85,9 +85,15 @@ def _collect(seg_iter, offset: float = 0.0) -> list:
 
 
 def _transcribe_whole(model, audio, lang, prompt: str, want_words: bool = True) -> dict:
+    # Bias toward Chinese output (fewer stray-English hallucinations) when the
+    # meeting is forced to Mandarin and the user gave no custom vocabulary.
+    if lang == "zh" and not prompt:
+        prompt = "以下是一段普通話會議的逐字稿。"
     seg_iter, info = model.transcribe(
         audio, language=lang, initial_prompt=prompt or None,
         word_timestamps=want_words, vad_filter=True, beam_size=config.LOCAL_WHISPER_BEAM,
+        condition_on_previous_text=False,   # avoid hallucination loops
+        no_speech_threshold=0.6,
     )
     return {"language": info.language or (lang or ""), "segments": _collect(seg_iter)}
 

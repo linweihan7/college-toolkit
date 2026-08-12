@@ -85,10 +85,12 @@ def _cluster(embeddings, num_speakers: Optional[int]):
         model = AgglomerativeClustering(n_clusters=k, metric="cosine", linkage="average")
     else:
         # Auto: split when voices are sufficiently different (cosine distance).
-        # Empirically same-speaker <~0.15, different-speaker >~0.25; 0.24 sits
-        # between. For best results set the expected speaker count in the UI.
+        # Real speech has high within-speaker variance, so a low threshold badly
+        # over-splits (one person -> many "speakers"). 0.42 is far more stable.
+        # Auto speaker-counting is inherently unreliable — set the expected
+        # speaker count in the UI whenever you know it.
         model = AgglomerativeClustering(
-            n_clusters=None, distance_threshold=0.24, metric="cosine", linkage="average"
+            n_clusters=None, distance_threshold=0.42, metric="cosine", linkage="average"
         )
     return list(model.fit_predict(embeddings))
 
