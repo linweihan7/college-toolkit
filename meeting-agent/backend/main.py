@@ -9,7 +9,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import config, pipeline, storage, summarize, transcribe
+from . import clean, config, pipeline, storage, summarize, transcribe
 from .schemas import ProcessOptions
 
 FRONTEND = Path(__file__).resolve().parent.parent / "frontend"
@@ -48,6 +48,43 @@ async def transcribe_chunk(request: Request, sample_rate: int = 16000, language:
         return transcribe.transcribe_window(pcm, lang)
     except Exception as exc:  # noqa: BLE001 - never break the live stream
         return {"text": "", "error": str(exc)}
+
+
+@app.post("/api/clean")
+async def clean_live(payload: dict, provider: str = ""):
+    """Live AI proofreading: polish a short passage of rough captions."""
+    prov = config.resolve_ai_provider(provider)
+    if not prov:
+        raise HTTPException(400, "AI 校對需要 Claude / GPT / Gemini 金鑰（Gemini 有免費額度）")
+    rough = (payload.get("text") or "").strip()
+    if not rough:
+        return {"text": "", "provider": prov}
+    try:
+        return {"text": clean.clean_text(rough, prov, payload.get("context", "")), "provider": prov}
+    except Exception as exc:  # noqa: BLE001 - never break the live stream; fall back to raw
+        return {"text": rough, "provider": prov, "error": str(exc)}
+
+
+@app.post("/api/meetings/{mid}/cleanup")
+def cleanup_meeting(mid: str, provider: str = ""):
+    """AI-proofread the whole stored transcript (line-by-line, alignment kept)."""
+    prov = config.resolve_ai_provider(provider)
+    if not prov:
+        raise HTTPException(400, "AI 校對需要 Claude / GPT / Gemini 金鑰")
+    m = storage.get(mid)
+    if not m or not (m.get("result") or {}).get("segments"):
+        raise HTTPException(400, "No transcript to clean")
+    result = m["result"]
+    segs = result["segments"]
+    try:
+        cleaned = clean.clean_lines([s["text"] for s in segs], prov)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"{prov} cleanup failed: {exc}")
+    for s, c in zip(segs, cleaned):
+        s["text"] = c
+    result["cleaned_by"] = prov
+    storage.update(mid, result=result)
+    return {"ok": True, "provider": prov}
 
 
 @app.post("/api/meetings")

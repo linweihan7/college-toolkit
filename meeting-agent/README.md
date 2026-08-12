@@ -15,6 +15,9 @@ deliberately choose the *Cloud API* transcription engine.
 2. **Live captions** (optional, on by default): while you record, short audio
    windows stream to a fast local model and captions appear within a few seconds
    — rough by design. The accurate transcript is produced by the full pass below.
+   With an AI key set, tick **AI 即時校對** to have a fast LLM proofread those
+   rough captions into clean Traditional Chinese live. After a meeting, the
+   **✨ AI 校對逐字稿** button re-writes the whole transcript the same way.
 3. **Transcribe** the full recording after the meeting, with a choice of engine:
    - **Local Whisper** (`faster-whisper large-v3`) — offline, private, free.
    - **Cloud API** (OpenAI) — no local model, chunked to handle long meetings.

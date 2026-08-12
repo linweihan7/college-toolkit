@@ -41,9 +41,14 @@
           </div>
           <label class="check"><input type="checkbox" id="sysAudio" /> 同時擷取電腦／分頁聲音 <span class="muted">（適用於線上會議）</span></label>
           <label class="check"><input type="checkbox" id="liveCaps" checked /> 即時字幕 <span id="liveNote" class="muted small">（邊講邊出字）</span></label>
+          <label class="check"><input type="checkbox" id="aiClean" /> AI 即時校對 <span id="aiCleanNote" class="muted small">（AI 邊聽邊修正字幕）</span></label>
           <div id="liveBox" class="live-box hidden">
-            <div class="live-head"><span class="live-dot"></span> 即時字幕</div>
+            <div class="live-head"><span class="live-dot"></span> 即時字幕（原始）</div>
             <div id="liveCaptions" class="live-captions"></div>
+          </div>
+          <div id="aiBox" class="live-box hidden">
+            <div class="live-head"><span class="live-dot" style="background:var(--accent)"></span> AI 校對（<span id="aiProvLabel"></span>）</div>
+            <div id="aiCaptions" class="live-captions"></div>
           </div>
           <div id="dropzone" class="dropzone">
             <p>或 <label class="link" for="fileInput">選擇檔案</label> ／ 拖曳到這裡</p>
@@ -106,6 +111,7 @@
           <div id="mBadges" class="badges"></div>
         </div>
         <div class="head-actions">
+          <button id="cleanupBtn" class="ghost">✨ AI 校對逐字稿</button>
           <button id="retransBtn" class="ghost">↻ 重新轉錄（國語）</button>
           <button id="exportMd" class="ghost">⬇ 會議記錄 .md</button>
           <button id="exportTxt" class="ghost">⬇ 逐字稿 .txt</button>

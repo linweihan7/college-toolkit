@@ -47,6 +47,11 @@ async function loadCaps() {
   $("liveCaps").disabled = !live.available;
   $("liveNote").textContent = live.available ? "（邊講邊出字）" : "（需本機引擎）";
 
+  const ai = firstAiProvider();
+  $("aiClean").disabled = !ai || !live.available;
+  if (!ai) $("aiClean").checked = false;
+  $("aiCleanNote").textContent = ai ? "（AI 邊聽邊修正字幕）" : "（需 Claude／GPT／Gemini 金鑰，Gemini 免費）";
+
   // Summary AI providers (Claude / GPT / Gemini).
   const provs = CAPS.summarization.providers;
   const provLabels = { claude: "Claude", openai: "GPT (OpenAI)", gemini: "Gemini", local: "離線摘要（免金鑰）" };
@@ -97,6 +102,13 @@ const statusLabel = (s) => STATUS_LABELS[s] || s;
 let mediaRecorder = null, chunks = [], recStream = null, audioCtx = null, meterCtx = null,
   analyser = null, extraStreams = [], timerInt = null, meterRAF = null, recStart = 0;
 let liveProcessor = null, liveBuf = [], liveTimer = null, liveBusy = false, liveSR = 16000;
+let aiCleanActive = false, aiCleanBuf = [], aiCleanTimer = null, aiCleanBusy = false, aiCleanTail = "";
+
+function firstAiProvider() {
+  if (!CAPS) return "";
+  const p = CAPS.summarization.providers;
+  return ["claude", "openai", "gemini"].find((k) => p[k] && p[k].available) || "";
+}
 
 // Keep audio contexts running if the tab is backgrounded during a long meeting.
 function resumeCtxs() {
@@ -176,9 +188,12 @@ function cleanupRecording() {
   clearInterval(timerInt); cancelAnimationFrame(meterRAF);
   document.removeEventListener("visibilitychange", resumeCtxs);
   clearInterval(liveTimer); liveTimer = null;
+  clearInterval(aiCleanTimer); aiCleanTimer = null;
   if (liveProcessor) { try { liveProcessor.disconnect(); } catch (e) {} liveProcessor.onaudioprocess = null; liveProcessor = null; }
   liveBuf = []; liveBusy = false;
+  aiCleanBuf = []; aiCleanBusy = false; aiCleanActive = false;
   $("liveBox").classList.add("hidden");
+  $("aiBox").classList.add("hidden");
   extraStreams.forEach((s) => s.getTracks().forEach((t) => t.stop()));
   extraStreams = [];
   if (audioCtx) { audioCtx.close().catch(() => {}); audioCtx = null; }
@@ -212,6 +227,15 @@ function drawMeter() {
 }
 
 /* ============================ Live captions ============================ */
+function capTo(box, text, cls) {
+  const el = document.createElement("div");
+  el.className = "cap" + (cls ? " " + cls : "");
+  el.textContent = text;
+  box.appendChild(el);
+  box.scrollTop = box.scrollHeight;
+  return el;
+}
+
 function startLive(stream) {
   liveSR = meterCtx.sampleRate;
   const src = meterCtx.createMediaStreamSource(stream);
@@ -224,6 +248,38 @@ function startLive(stream) {
   $("liveCaptions").innerHTML = "";
   $("liveBox").classList.remove("hidden");
   liveTimer = setInterval(flushLive, 3500);
+
+  // AI proofreading of the live captions, if a key is set and the toggle is on.
+  const prov = $("aiClean").checked ? firstAiProvider() : "";
+  aiCleanActive = !!prov;
+  if (aiCleanActive) {
+    aiCleanBuf = []; aiCleanTail = "";
+    $("aiProvLabel").textContent = { claude: "Claude", openai: "GPT", gemini: "Gemini" }[prov] || prov;
+    $("aiCaptions").innerHTML = "";
+    $("aiBox").classList.remove("hidden");
+    aiCleanTimer = setInterval(flushClean, 9000);   // batch a few captions for context
+  }
+}
+
+async function flushClean() {
+  if (aiCleanBusy || !aiCleanBuf.length) return;
+  const rough = aiCleanBuf.join(" ").trim();
+  aiCleanBuf = [];
+  if (!rough) return;
+  aiCleanBusy = true;
+  const pend = capTo($("aiCaptions"), "…", "pending");
+  try {
+    const r = await fetch(`/api/clean?provider=${firstAiProvider()}`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: rough, context: aiCleanTail }),
+    });
+    const j = await r.json();
+    pend.remove();
+    if (j.text) { capTo($("aiCaptions"), j.text); aiCleanTail = j.text; }
+  } catch (e) {
+    pend.remove();
+  }
+  aiCleanBusy = false;
 }
 
 async function flushLive() {
@@ -254,22 +310,12 @@ async function flushLive() {
 }
 
 function appendLiveLine(text) {
-  const box = $("liveCaptions");
-  const el = document.createElement("div");
-  el.className = "cap";
-  el.textContent = text;
-  box.appendChild(el);
-  box.scrollTop = box.scrollHeight;
+  capTo($("liveCaptions"), text);
+  if (aiCleanActive) aiCleanBuf.push(text);        // feed the AI proofreader
 }
 
 function addPending() {
-  const box = $("liveCaptions");
-  const el = document.createElement("div");
-  el.className = "cap pending";
-  el.textContent = "…";
-  box.appendChild(el);
-  box.scrollTop = box.scrollHeight;
-  return el;
+  return capTo($("liveCaptions"), "…", "pending");
 }
 
 /* ============================ Upload + processing ============================ */
@@ -517,6 +563,21 @@ $("copyBtn").onclick = () => withResult((m, r) => {
   const txt = [s.summary, "", "Highlights:", ...(s.highlights || []).map((h) => "• " + h)].join("\n");
   navigator.clipboard.writeText(txt).then(() => flash($("copyBtn"), "已複製！"));
 });
+$("cleanupBtn").onclick = async () => {
+  const prov = firstAiProvider();
+  if (!prov) { alert("AI 校對需要 Claude／GPT／Gemini 金鑰（Gemini 有免費額度），請在 .env 設定。"); return; }
+  const btn = $("cleanupBtn"), orig = btn.textContent;
+  btn.disabled = true; btn.textContent = "AI 校對中…";
+  try {
+    await api(`/api/meetings/${currentMeetingId}/cleanup?provider=${prov}`, { method: "POST" });
+    const m = await api(`/api/meetings/${currentMeetingId}`);
+    renderMeeting(m); switchTab("transcript");
+  } catch (e) {
+    alert("AI 校對失敗：" + (e.detail || e.message || JSON.stringify(e)));
+  } finally {
+    btn.disabled = false; btn.textContent = orig;
+  }
+};
 $("retransBtn").onclick = async () => {
   if (!confirm("以國語（繁體中文）重新轉錄這場會議？會覆蓋現有逐字稿與摘要。")) return;
   try {

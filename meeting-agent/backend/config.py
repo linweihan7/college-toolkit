@@ -63,6 +63,11 @@ OPENAI_SUMMARY_MODEL = os.getenv("OPENAI_SUMMARY_MODEL", "gpt-4o")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "") or os.getenv("GOOGLE_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
+# Fast models used for live/whole transcript AI proofreading (low latency).
+CLEAN_MODEL_CLAUDE = os.getenv("CLEAN_MODEL_CLAUDE", "claude-haiku-4-5-20251001")
+CLEAN_MODEL_OPENAI = os.getenv("CLEAN_MODEL_OPENAI", "gpt-4o-mini")
+CLEAN_MODEL_GEMINI = os.getenv("CLEAN_MODEL_GEMINI", "gemini-2.0-flash")
+
 # Meetings are restricted to these two languages by design.
 SUPPORTED_LANGUAGES = ("en", "zh")
 
@@ -155,5 +160,15 @@ def resolve_summary_provider(preferred: str = "") -> str:
     provs = capabilities()["summarization"]["providers"]
     for p in [preferred, SUMMARY_PROVIDER, "claude", "openai", "gemini", "local"]:
         if p and provs.get(p, {}).get("available"):
+            return p
+    return ""
+
+
+def resolve_ai_provider(preferred: str = "") -> str:
+    """Like resolve_summary_provider but LLM-only (never the offline summarizer) —
+    AI proofreading needs a real model. "" if no AI key is set."""
+    provs = capabilities()["summarization"]["providers"]
+    for p in [preferred, SUMMARY_PROVIDER, "claude", "openai", "gemini"]:
+        if p in ("claude", "openai", "gemini") and provs.get(p, {}).get("available"):
             return p
     return ""
