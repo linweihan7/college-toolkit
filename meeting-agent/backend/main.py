@@ -171,6 +171,29 @@ def resummarize(mid: str, provider: str = ""):
     return {"summary": summary, "provider": prov}
 
 
+@app.get("/api/search")
+def search_meetings(q: str = ""):
+    """Full-text search across every meeting's transcript."""
+    q = q.strip().lower()
+    if not q:
+        return {"results": []}
+    results = []
+    for meta in storage.list_meetings():
+        if meta["status"] != "done":
+            continue
+        full = storage.get(meta["id"])
+        names = (full.get("result") or {}).get("speaker_names", {})
+        for s in (full.get("result") or {}).get("segments", []):
+            text = s.get("edited") or s.get("clean") or s.get("text", "")
+            if q in text.lower():
+                spk = names.get(s.get("speaker"), s.get("speaker"))
+                results.append({"id": meta["id"], "title": meta["title"],
+                                "start": s["start"], "speaker": spk, "text": text})
+                if len(results) >= 100:
+                    return {"results": results}
+    return {"results": results}
+
+
 @app.get("/api/glossary")
 def get_glossary():
     return {"terms": storage.get_setting("glossary", "")}

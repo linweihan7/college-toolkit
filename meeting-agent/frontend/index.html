@@ -17,6 +17,7 @@
     </div>
     <button id="newBtn" class="primary block">＋ 新增會議</button>
     <div id="capsBar" class="caps"></div>
+    <input type="text" id="globalSearch" class="side-search" placeholder="🔍 搜尋所有會議逐字稿…" />
     <nav id="meetingList" class="list"></nav>
     <footer class="side-foot">全程於 <code>localhost</code> 本機處理</footer>
   </aside>
@@ -39,6 +40,8 @@
             <button id="recBtn" class="primary big">● 開始錄音</button>
             <button id="stopBtn" class="danger big" disabled>■ 停止</button>
           </div>
+          <button id="micTest" type="button" class="ghost" style="font-size:12px;padding:6px 10px;margin-top:8px">🎙 測試麥克風（5 秒）</button>
+          <span id="micTestResult" class="muted small"></span>
           <label class="check"><input type="checkbox" id="sysAudio" /> 同時擷取電腦／分頁聲音 <span class="muted">（適用於線上會議）</span></label>
           <label class="check"><input type="checkbox" id="liveCaps" checked /> 即時字幕 <span id="liveNote" class="muted small">（邊講邊出字）</span></label>
           <label class="check"><input type="checkbox" id="aiClean" /> AI 即時校對 <span id="aiCleanNote" class="muted small">（AI 邊聽邊修正字幕）</span></label>

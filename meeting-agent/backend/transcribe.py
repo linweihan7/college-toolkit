@@ -79,7 +79,8 @@ def _collect(seg_iter, offset: float = 0.0) -> list:
         ]
         out.append(
             {"start": float(s.start) + offset, "end": float(s.end) + offset,
-             "text": s.text.strip(), "words": words}
+             "text": s.text.strip(), "words": words,
+             "logprob": float(getattr(s, "avg_logprob", 0.0) or 0.0)}
         )
     return out
 

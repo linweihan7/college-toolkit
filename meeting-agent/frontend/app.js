@@ -363,18 +363,21 @@ async function uploadAudio(blob, filename) {
 
 function pollStatus(id) {
   clearInterval(pollTimer);
+  const t0 = Date.now();
   pollTimer = setInterval(async () => {
     let s;
     try { s = await api(`/api/meetings/${id}/status`); } catch { return; }
     $("progressBar").style.width = (s.progress || 0) + "%";
-    $("procStage").textContent = s.stage || "";
+    const elapsed = "已用 " + fmtTime((Date.now() - t0) / 1000);
+    const audio = s.duration ? " · 音訊 " + fmtTime(s.duration) : "";
+    $("procStage").textContent = (s.stage || "") + " · " + elapsed + audio;
     $("procTitle").textContent = s.title && s.title !== "未命名會議" ? s.title : "處理中…";
     if (s.status === "done" || s.status === "error") {
       clearInterval(pollTimer);
       loadList();
       if (id === currentMeetingId) openMeeting(id);
     }
-  }, 1500);
+  }, 1000);
 }
 
 /* ============================ Meeting detail ============================ */
@@ -529,7 +532,9 @@ function renderTranscript(segments) {
       inner = `<div class="cmp2"><div class="raw">${spk}${raw}</div><div class="cln">${spk}${disp}</div></div>`;
     } else {
       const show = transcriptView === "raw" ? raw : disp;
-      inner = `${spk}<span class="txt" data-i="${i}" title="雙擊可編輯">${show}</span>`;
+      const lc = (s.logprob !== undefined && s.logprob < -0.9 && !s.edited) ? " lowconf" : "";
+      const tip = lc ? "辨識信心較低，建議核對；雙擊可編輯" : "雙擊可編輯";
+      inner = `${spk}<span class="txt${lc}" data-i="${i}" title="${tip}">${show}</span>`;
     }
     return `<div class="turn"><span class="ts" data-t="${s.start}">${fmtTime(s.start)}</span>
       <div class="body">${inner}</div></div>`;
@@ -714,6 +719,79 @@ const dz = $("dropzone");
 ["dragover", "dragenter"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add("drag"); }));
 ["dragleave", "drop"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove("drag"); }));
 dz.addEventListener("drop", (e) => { const f = e.dataTransfer.files[0]; if (f) { $("fileName").textContent = f.name; uploadAudio(f, f.name); } });
+
+/* ---- Global search across all meetings ---- */
+let searchTimer = null;
+function highlight(text, q) {
+  const i = text.toLowerCase().indexOf(q.toLowerCase());
+  if (i < 0) return esc(text);
+  return esc(text.slice(0, i)) + "<mark>" + esc(text.slice(i, i + q.length)) + "</mark>" + esc(text.slice(i + q.length));
+}
+$("globalSearch").addEventListener("input", (e) => {
+  clearTimeout(searchTimer);
+  const q = e.target.value.trim();
+  if (!q) { loadList(); return; }
+  searchTimer = setTimeout(async () => {
+    try { renderSearchResults((await api(`/api/search?q=${encodeURIComponent(q)}`)).results || [], q); }
+    catch (err) { /* ignore */ }
+  }, 300);
+});
+function renderSearchResults(results, q) {
+  const el = $("meetingList");
+  if (!results.length) { el.innerHTML = `<p class="muted small" style="padding:8px">找不到「${esc(q)}」。</p>`; return; }
+  el.innerHTML = results.map((m) => `
+    <div class="item sresult" data-id="${m.id}" data-t="${m.start}">
+      <div class="t" style="white-space:normal">${highlight(m.text, q)}</div>
+      <div class="m">${esc(m.title)} · ${fmtTime(m.start)}${m.speaker ? " · " + esc(m.speaker) : ""}</div>
+    </div>`).join("");
+  el.querySelectorAll(".sresult").forEach((n) => n.onclick = async () => {
+    await openMeeting(n.dataset.id); switchTab("transcript");
+    const p = $("player"); if (p) { p.currentTime = Number(n.dataset.t); p.play(); }
+  });
+}
+
+/* ---- Mic test ---- */
+$("micTest").onclick = async () => {
+  const btn = $("micTest"), res = $("micTestResult");
+  btn.disabled = true; res.textContent = " 測試中…請正常說話";
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const an = ctx.createAnalyser(); an.fftSize = 1024;
+    ctx.createMediaStreamSource(stream).connect(an);
+    const buf = new Uint8Array(an.fftSize);
+    let peak = 0, sum = 0, n = 0;
+    const t0 = Date.now();
+    await new Promise((resolve) => {
+      const tick = () => {
+        an.getByteTimeDomainData(buf);
+        let m = 0;
+        for (const v of buf) { const d = Math.abs(v - 128) / 128; if (d > m) m = d; sum += d; n++; }
+        if (m > peak) peak = m;
+        res.textContent = " 音量 " + "▮".repeat(Math.min(20, Math.round(m * 25)));
+        Date.now() - t0 < 5000 ? requestAnimationFrame(tick) : resolve();
+      };
+      tick();
+    });
+    stream.getTracks().forEach((t) => t.stop()); ctx.close();
+    const avg = sum / Math.max(1, n);
+    res.textContent = peak < 0.03 ? " ⚠ 幾乎沒有聲音 — 檢查麥克風權限與音量。"
+      : (peak < 0.08 || avg < 0.01) ? " ⚠ 音量偏小 — 請靠近麥克風或調高輸入音量。"
+      : " ✓ 麥克風良好，可以開始錄音。";
+  } catch (e) { res.textContent = " 無法存取麥克風：" + e.message; }
+  btn.disabled = false;
+};
+
+/* ---- Keyboard shortcuts (during playback review) ---- */
+document.addEventListener("keydown", (e) => {
+  const el = document.activeElement;
+  if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+  if ($("meetingView").classList.contains("hidden")) return;
+  const p = $("player"); if (!p || !p.src) return;
+  if (e.code === "Space") { e.preventDefault(); p.paused ? p.play() : p.pause(); }
+  else if (e.code === "ArrowLeft") { e.preventDefault(); p.currentTime = Math.max(0, p.currentTime - 5); }
+  else if (e.code === "ArrowRight") { e.preventDefault(); p.currentTime = Math.min(p.duration || 1e9, p.currentTime + 5); }
+});
 
 /* ---- Glossary (persistent vocabulary) ---- */
 $("saveGlossary").onclick = async () => {
