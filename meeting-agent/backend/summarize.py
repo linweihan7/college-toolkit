@@ -284,12 +284,27 @@ def _local_summary(segments: List[dict], summary_language: str) -> dict:
     }
 
 
-def summarize(segments: List[dict], summary_language: str = "zh", provider: str = "claude") -> dict:
+def _resolve(segments: List[dict], names) -> List[dict]:
+    """Use the best available text (manual edit > AI-cleaned > raw) and map raw
+    speaker labels to real names, so summaries reflect corrections."""
+    names = names or {}
+    return [
+        {
+            "start": s["start"], "end": s.get("end", s["start"]),
+            "text": s.get("edited") or s.get("clean") or s.get("text", ""),
+            "speaker": names.get(s.get("speaker"), s.get("speaker")),
+        }
+        for s in segments
+    ]
+
+
+def summarize(segments: List[dict], summary_language: str = "zh", provider: str = "claude", names=None) -> dict:
+    segs = _resolve(segments, names)
     if provider == "local":
-        result = _local_summary(segments, summary_language)
+        result = _local_summary(segs, summary_language)
     else:
         fn = PROVIDERS.get(provider, _via_claude)
-        result = _parse_json(fn(_build_prompt(segments, summary_language)))
+        result = _parse_json(fn(_build_prompt(segs, summary_language)))
     result["_provider"] = provider
     return result
 

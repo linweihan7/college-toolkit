@@ -13,6 +13,11 @@ const fmtTime = (sec) => {
 let CAPS = null;
 let currentMeetingId = null;
 let pollTimer = null;
+let SPEAKER_NAMES = {};
+
+// Display precedence: manual edit > AI-cleaned > raw ASR.
+const displayText = (s) => s.edited || s.clean || s.text || "";
+const spName = (raw) => (raw ? (SPEAKER_NAMES[raw] || raw) : "");
 
 /* ============================ Views ============================ */
 function show(view) {
@@ -385,6 +390,7 @@ async function openMeeting(id) {
 function renderMeeting(m) {
   $("mTitle").textContent = m.title;
   const r = m.result || {};
+  SPEAKER_NAMES = r.speaker_names || {};
   const langName = { en: "English", zh: "中文", "": "—" }[r.language] || r.language;
   const badges = [
     new Date(m.created_at * 1000).toLocaleString(),
@@ -508,7 +514,7 @@ function renderTranscript(segments) {
   const speakers = [...new Set(segments.map((s) => s.speaker).filter(Boolean))];
   const spanOf = (s) => {
     if (!s.speaker) return "";
-    return `<span class="spk spk-${speakers.indexOf(s.speaker) % 6}">${esc(s.speaker)}</span> `;
+    return `<span class="spk spk-${speakers.indexOf(s.speaker) % 6}" data-raw="${esc(s.speaker)}" title="點擊重新命名">${esc(spName(s.speaker))}</span> `;
   };
   const toolbar = hasClean ? `<div class="tview">
     <button data-v="clean" class="${transcriptView === "clean" ? "active" : ""}">AI 校對</button>
@@ -516,13 +522,14 @@ function renderTranscript(segments) {
     <button data-v="compare" class="${transcriptView === "compare" ? "active" : ""}">對照</button>
   </div>` : "";
 
-  const rows = segments.map((s) => {
-    const spk = spanOf(s), raw = esc(s.text), cln = esc(s.clean || s.text);
+  const rows = segments.map((s, i) => {
+    const spk = spanOf(s), raw = esc(s.text), disp = esc(displayText(s));
     let inner;
     if (hasClean && transcriptView === "compare") {
-      inner = `<div class="cmp2"><div class="raw">${spk}${raw}</div><div class="cln">${spk}${cln}</div></div>`;
+      inner = `<div class="cmp2"><div class="raw">${spk}${raw}</div><div class="cln">${spk}${disp}</div></div>`;
     } else {
-      inner = spk + ((hasClean && transcriptView === "clean") ? cln : raw);
+      const show = transcriptView === "raw" ? raw : disp;
+      inner = `${spk}<span class="txt" data-i="${i}" title="雙擊可編輯">${show}</span>`;
     }
     return `<div class="turn"><span class="ts" data-t="${s.start}">${fmtTime(s.start)}</span>
       <div class="body">${inner}</div></div>`;
@@ -535,6 +542,48 @@ function renderTranscript(segments) {
   body.querySelectorAll(".tview button").forEach((b) => b.onclick = () => {
     transcriptView = b.dataset.v; renderTranscript(segments);
   });
+  body.querySelectorAll(".spk").forEach((n) => n.onclick = () => renameSpeaker(n.dataset.raw, segments));
+  body.querySelectorAll(".txt").forEach((n) => n.ondblclick = () => editLine(Number(n.dataset.i), segments, n));
+}
+
+async function renameSpeaker(raw, segments) {
+  const name = prompt(`為「${raw}」命名（清空即還原）：`, SPEAKER_NAMES[raw] || "");
+  if (name === null) return;
+  const names = { ...SPEAKER_NAMES };
+  if (name.trim()) names[raw] = name.trim(); else delete names[raw];
+  try {
+    await api(`/api/meetings/${currentMeetingId}/speakers`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ names }),
+    });
+    SPEAKER_NAMES = names; renderTranscript(segments); loadList();
+  } catch (e) { alert("命名失敗：" + (e.detail || e.message || JSON.stringify(e))); }
+}
+
+function editLine(i, segments, span) {
+  const cur = displayText(segments[i]);
+  const ta = document.createElement("textarea");
+  ta.className = "lineEdit"; ta.value = cur;
+  span.replaceWith(ta); ta.focus(); ta.setSelectionRange(cur.length, cur.length);
+  let done = false;
+  const save = async () => {
+    if (done) return; done = true;
+    const text = ta.value.trim();
+    if (text && text !== cur) {
+      try {
+        await api(`/api/meetings/${currentMeetingId}/segment`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ index: i, text }),
+        });
+        segments[i].edited = text;
+      } catch (e) { alert("儲存失敗：" + (e.detail || e.message)); }
+    }
+    renderTranscript(segments);
+  };
+  ta.onblur = save;
+  ta.onkeydown = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ta.blur(); }
+    if (e.key === "Escape") { done = true; renderTranscript(segments); }
+  };
 }
 
 function renderMinutes(md) {
@@ -578,9 +627,11 @@ async function withResult(fn) {
 }
 $("exportMd").onclick = () => withResult((m, r) => download(
   slug(m.title) + ".md", (r.summary && r.summary.minutes_markdown) || "尚無會議記錄。", "text/markdown"));
-$("exportTxt").onclick = () => withResult((m, r) => download(
-  slug(m.title) + ".txt", (r.segments || []).map((s) =>
-    `[${fmtTime(s.start)}] ${s.speaker ? s.speaker + ": " : ""}${s.clean || s.text}`).join("\n")));
+$("exportTxt").onclick = () => withResult((m, r) => {
+  SPEAKER_NAMES = r.speaker_names || {};
+  download(slug(m.title) + ".txt", (r.segments || []).map((s) =>
+    `[${fmtTime(s.start)}] ${s.speaker ? spName(s.speaker) + ": " : ""}${displayText(s)}`).join("\n"));
+});
 $("copyBtn").onclick = () => withResult((m, r) => {
   const s = r.summary || {};
   const txt = [s.summary, "", "Highlights:", ...(s.highlights || []).map((h) => "• " + h)].join("\n");
@@ -664,8 +715,24 @@ const dz = $("dropzone");
 ["dragleave", "drop"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove("drag"); }));
 dz.addEventListener("drop", (e) => { const f = e.dataTransfer.files[0]; if (f) { $("fileName").textContent = f.name; uploadAudio(f, f.name); } });
 
+/* ---- Glossary (persistent vocabulary) ---- */
+$("saveGlossary").onclick = async () => {
+  try {
+    await api("/api/glossary", { method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ terms: $("optVocab").value.trim() }) });
+    flash($("saveGlossary"), "✓ 已儲存");
+  } catch (e) { alert("儲存失敗：" + (e.detail || e.message)); }
+};
+async function loadGlossary() {
+  try {
+    const g = await api("/api/glossary");
+    if (g.terms && !$("optVocab").value.trim()) $("optVocab").value = g.terms;
+  } catch (e) { /* ignore */ }
+}
+
 (async function init() {
   await loadCaps();
+  await loadGlossary();
   await loadList();
   show("newView");
 })();

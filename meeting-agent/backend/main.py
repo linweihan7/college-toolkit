@@ -157,7 +157,8 @@ def resummarize(mid: str, provider: str = ""):
         raise HTTPException(400, "No summarization AI available — add a Claude/GPT/Gemini key to .env")
     try:
         summary = summarize.summarize(
-            result["segments"], m["options"].get("summary_language", "zh"), provider=prov
+            result["segments"], m["options"].get("summary_language", "zh"),
+            provider=prov, names=result.get("speaker_names"),
         )
     except Exception as exc:  # noqa: BLE001 - surface provider/auth errors to the UI
         raise HTTPException(502, f"{prov} summarization failed: {exc}")
@@ -168,6 +169,45 @@ def resummarize(mid: str, provider: str = ""):
         title = summary["title"]
     storage.update(mid, result=result, title=title)
     return {"summary": summary, "provider": prov}
+
+
+@app.get("/api/glossary")
+def get_glossary():
+    return {"terms": storage.get_setting("glossary", "")}
+
+
+@app.put("/api/glossary")
+def put_glossary(payload: dict):
+    storage.set_setting("glossary", (payload.get("terms") or "").strip())
+    return {"ok": True}
+
+
+@app.post("/api/meetings/{mid}/speakers")
+def set_speaker_names(mid: str, payload: dict):
+    """Map raw diarization labels to real names, e.g. {"Speaker 1": "王經理"}."""
+    m = storage.get(mid)
+    if not m or not m.get("result"):
+        raise HTTPException(404, "Not found")
+    result = m["result"]
+    result["speaker_names"] = {k: v.strip() for k, v in (payload.get("names") or {}).items() if v.strip()}
+    storage.update(mid, result=result)
+    return {"ok": True, "speaker_names": result["speaker_names"]}
+
+
+@app.post("/api/meetings/{mid}/segment")
+def edit_segment(mid: str, payload: dict):
+    """Manually correct one transcript line (stored as an override)."""
+    m = storage.get(mid)
+    if not m or not m.get("result"):
+        raise HTTPException(404, "Not found")
+    result = m["result"]
+    segs = result.get("segments") or []
+    idx = int(payload.get("index", -1))
+    if not (0 <= idx < len(segs)):
+        raise HTTPException(400, "Bad segment index")
+    segs[idx]["edited"] = (payload.get("text") or "").strip()
+    storage.update(mid, result=result)
+    return {"ok": True}
 
 
 @app.post("/api/meetings/{mid}/retranscribe")
@@ -217,7 +257,7 @@ def compare(mid: str, providers: str = ""):
     out, errors = {}, {}
     for p in want:
         try:
-            out[p] = summarize.summarize(result["segments"], lang, provider=p)
+            out[p] = summarize.summarize(result["segments"], lang, provider=p, names=result.get("speaker_names"))
         except Exception as exc:  # noqa: BLE001 - report per-provider failures
             errors[p] = str(exc)
     result["comparisons"] = out

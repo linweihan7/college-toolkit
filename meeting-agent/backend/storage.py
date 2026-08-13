@@ -29,7 +29,23 @@ CREATE TABLE IF NOT EXISTS meetings (
     result_json  TEXT,
     error        TEXT
 );
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
 """
+
+
+def get_setting(key: str, default: str = "") -> str:
+    with _conn() as c:
+        row = c.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    return row["value"] if row else default
+
+
+def set_setting(key: str, value: str) -> None:
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO settings(key,value) VALUES(?,?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (key, value),
+        )
 
 
 def _conn() -> sqlite3.Connection:

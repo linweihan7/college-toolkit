@@ -144,7 +144,11 @@ table.ai th { color: var(--muted); font-weight: 600; font-size: 11.5px; text-tra
 .turn { display: flex; gap: 12px; padding: 8px 0; line-height: 1.6; }
 .turn .ts { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; cursor: pointer; flex-shrink: 0; width: 62px; padding-top: 2px; }
 .turn .ts:hover { color: var(--accent); }
-.turn .spk { font-weight: 650; font-size: 13px; }
+.turn .spk { font-weight: 650; font-size: 13px; cursor: pointer; border-bottom: 1px dashed transparent; }
+.turn .spk:hover { border-bottom-color: currentColor; }
+.turn .txt { cursor: text; }
+.lineEdit { width: 100%; font: inherit; font-size: 14px; line-height: 1.5; color: var(--ink);
+  background: var(--bg); border: 1px solid var(--accent); border-radius: 6px; padding: 4px 8px; resize: vertical; }
 .turn .body { flex: 1; }
 .spk-0 { color: #2f6bff; } .spk-1 { color: #d9600a; } .spk-2 { color: #1a9e5f; }
 .spk-3 { color: #a648d6; } .spk-4 { color: #d6395f; } .spk-5 { color: #0891b2; }
