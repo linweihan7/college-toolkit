@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cipher — a daily word game</title>
+<meta name="description" content="Guess the five-letter word in six tries. A daily puzzle plus unlimited practice mode. Free to play in your browser.">
+<meta name="theme-color" content="#11131a">
+<meta property="og:title" content="Cipher">
+<meta property="og:description" content="Guess the five-letter word in six tries.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>%F0%9F%9F%A9</text></svg>">
+<style>
+  :root{
+    --bg:#11131a; --panel:#181b25; --line:#2c3140; --text:#e8eaf0; --muted:#8b93a7;
+    --key:#3a4055; --keytext:#e8eaf0;
+    --hit:#4d9d5f; --near:#c8a53d; --miss:#3a4055;
+    --accent:#6ea8fe;
+    --font:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *,*::before,*::after{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%}
+  body{
+    background:var(--bg); color:var(--text); font-family:var(--font);
+    display:flex; flex-direction:column; align-items:center;
+    overflow:hidden; -webkit-text-size-adjust:100%;
+    user-select:none; -webkit-user-select:none; touch-action:manipulation;
+  }
+  header{
+    width:100%; border-bottom:1px solid var(--line); flex:none;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:8px 12px; gap:8px;
+  }
+  h1{
+    margin:0; font-size:clamp(18px,4.4vw,26px); font-weight:800; letter-spacing:.26em;
+    text-transform:uppercase; padding-left:.26em;
+  }
+  .iconbtn{
+    background:transparent; border:none; color:var(--muted); cursor:pointer;
+    font-size:19px; line-height:1; padding:7px 9px; border-radius:8px; font-family:var(--font);
+  }
+  .iconbtn:hover{background:var(--panel); color:var(--text)}
+  .iconbtn:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  .hgroup{display:flex; align-items:center; gap:2px}
+  .mode{
+    font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted);
+    border:1px solid var(--line); border-radius:20px; padding:4px 10px; cursor:pointer;
+    background:transparent; font-family:var(--font);
+  }
+  .mode:hover{border-color:var(--accent); color:var(--text)}
+
+  main{
+    flex:1 1 auto; width:100%; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:6px; min-height:0; padding:8px;
+  }
+  #board{display:grid; grid-template-rows:repeat(6,1fr); gap:5px; height:100%; max-height:min(56vh,420px); aspect-ratio:5/6}
+  .row{display:grid; grid-template-columns:repeat(5,1fr); gap:5px}
+  .tile{
+    display:flex; align-items:center; justify-content:center;
+    border:2px solid var(--line); border-radius:5px;
+    font-size:clamp(20px,5.4vw,32px); font-weight:800; text-transform:uppercase;
+    color:var(--text); background:transparent;
+    transition:transform .1s ease, background-color .25s ease, border-color .25s ease;
+  }
+  .tile.filled{border-color:#4b5266; animation:pop .1s ease}
+  @keyframes pop{50%{transform:scale(1.08)}}
+  .tile.flip{animation:flip .5s ease forwards}
+  @keyframes flip{0%{transform:rotateX(0)}50%{transform:rotateX(90deg)}100%{transform:rotateX(0)}}
+  .tile.hit{background:var(--hit); border-color:var(--hit); color:#fff}
+  .tile.near{background:var(--near); border-color:var(--near); color:#fff}
+  .tile.miss{background:var(--miss); border-color:var(--miss); color:#fff}
+  .row.shake{animation:shake .5s}
+  @keyframes shake{10%,90%{transform:translateX(-2px)}20%,80%{transform:translateX(4px)}30%,50%,70%{transform:translateX(-7px)}40%,60%{transform:translateX(7px)}}
+  .row.bounce .tile{animation:bounce .8s}
+  @keyframes bounce{0%,20%{transform:translateY(0)}40%{transform:translateY(-24px)}50%{transform:translateY(4px)}60%{transform:translateY(-10px)}80%,100%{transform:translateY(0)}}
+
+  #kb{width:100%; max-width:520px; padding:6px 4px 10px; flex:none; display:flex; flex-direction:column; gap:6px}
+  .krow{display:flex; gap:5px; justify-content:center}
+  .key{
+    flex:1 1 auto; min-width:0; height:clamp(44px,7.6vh,58px);
+    background:var(--key); color:var(--keytext); border:none; border-radius:5px;
+    font-family:var(--font); font-size:clamp(11px,3.1vw,14px); font-weight:700;
+    text-transform:uppercase; cursor:pointer; transition:background-color .2s ease, transform .05s ease;
+  }
+  .key:active{transform:scale(.94)}
+  .key:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  .key.wide{flex:1.6 1 auto; font-size:clamp(9px,2.5vw,11px); letter-spacing:.06em}
+  .key.hit{background:var(--hit); color:#fff}
+  .key.near{background:var(--near); color:#fff}
+  .key.miss{background:#22262f; color:#6b7285}
+  .spacer{flex:.5 1 auto}
+
+  #toast{
+    position:fixed; top:14%; left:50%; transform:translateX(-50%);
+    background:var(--text); color:var(--bg); padding:11px 18px; border-radius:6px;
+    font-weight:700; font-size:14px; opacity:0; pointer-events:none;
+    transition:opacity .2s ease; z-index:40; text-align:center; max-width:88vw;
+  }
+  #toast.show{opacity:1}
+
+  .modal{
+    position:fixed; inset:0; z-index:50; display:none;
+    align-items:center; justify-content:center; padding:18px;
+    background:rgba(6,8,12,.72); backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px);
+  }
+  .modal.show{display:flex}
+  .sheet{
+    width:min(460px,100%); max-height:90vh; overflow:auto;
+    background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:22px;
+    box-shadow:0 24px 60px rgba(0,0,0,.5);
+  }
+  .sheet h2{margin:0 0 4px; font-size:20px; letter-spacing:.04em}
+  .sheet p{color:var(--muted); font-size:14px; line-height:1.6; margin:8px 0}
+  .close{position:absolute; top:14px; right:16px}
+  .ex{display:flex; gap:5px; margin:10px 0 4px}
+  .ex .tile{width:38px; height:38px; font-size:19px; flex:none}
+  .stats{display:flex; justify-content:space-around; margin:16px 0 6px; text-align:center}
+  .stats .n{font-size:30px; font-weight:800; font-variant-numeric:tabular-nums}
+  .stats .l{font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.1em; margin-top:2px}
+  .dist{display:flex; flex-direction:column; gap:5px; margin-top:12px}
+  .drow{display:flex; align-items:center; gap:8px; font-size:12.5px; font-variant-numeric:tabular-nums}
+  .dbar{background:var(--miss); padding:2px 8px; border-radius:3px; font-weight:700; min-width:26px; text-align:right; color:#fff}
+  .dbar.cur{background:var(--hit)}
+  .btnrow{display:flex; gap:10px; margin-top:20px}
+  .btn{
+    flex:1; padding:13px; border-radius:8px; border:none; cursor:pointer;
+    background:var(--hit); color:#fff; font-family:var(--font); font-weight:700;
+    font-size:14px; letter-spacing:.06em; text-transform:uppercase;
+  }
+  .btn.alt{background:var(--key); color:var(--text)}
+  .btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  .answer{text-align:center; font-size:26px; font-weight:800; letter-spacing:.2em; text-transform:uppercase; margin:6px 0 2px}
+  @media (prefers-reduced-motion:reduce){ *{animation:none !important; transition:none !important} }
+</style>
+</head>
+<body>
+<header>
+  <button class="iconbtn" id="help" aria-label="How to play">?</button>
+  <div class="hgroup"><h1>Cipher</h1></div>
+  <div class="hgroup">
+    <button class="mode" id="modeBtn">Daily</button>
+    <button class="iconbtn" id="statsBtn" aria-label="Statistics">▤</button>
+  </div>
+</header>
+
+<main>
+  <div id="board" role="grid" aria-label="Guess grid"></div>
+</main>
+
+<div id="kb"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<div class="modal" id="helpModal">
+  <div class="sheet" style="position:relative">
+    <button class="iconbtn close" data-close aria-label="Close">✕</button>
+    <h2>How to play</h2>
+    <p>Guess the hidden five-letter word in six tries. Each guess must be a real word.</p>
+    <p>After each guess the tiles change color to show how close you were.</p>
+    <div class="ex"><div class="tile hit">C</div><div class="tile">R</div><div class="tile">A</div><div class="tile">N</div><div class="tile">E</div></div>
+    <p><b>C</b> is in the word and in the right spot.</p>
+    <div class="ex"><div class="tile">M</div><div class="tile near">O</div><div class="tile">U</div><div class="tile">S</div><div class="tile">E</div></div>
+    <p><b>O</b> is in the word but in the wrong spot.</p>
+    <div class="ex"><div class="tile">P</div><div class="tile">L</div><div class="tile miss">A</div><div class="tile">N</div><div class="tile">K</div></div>
+    <p><b>A</b> is not in the word anywhere.</p>
+    <p style="margin-top:14px"><b>Daily</b> gives everyone the same word each day. <b>Practice</b> is unlimited random words.</p>
+    <div class="btnrow"><button class="btn" data-close>Got it</button></div>
+  </div>
+</div>
+
+<div class="modal" id="statsModal">
+  <div class="sheet" style="position:relative">
+    <button class="iconbtn close" data-close aria-label="Close">✕</button>
+    <div id="resultTop"></div>
+    <h2 style="text-align:center" id="statsTitle">Statistics</h2>
+    <div class="stats">
+      <div><div class="n" id="sPlayed">0</div><div class="l">Played</div></div>
+      <div><div class="n" id="sWin">0</div><div class="l">Win %</div></div>
+      <div><div class="n" id="sCur">0</div><div class="l">Streak</div></div>
+      <div><div class="n" id="sMax">0</div><div class="l">Best</div></div>
+    </div>
+    <div class="l" style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-top:14px">Guess distribution</div>
+    <div class="dist" id="dist"></div>
+    <div class="btnrow">
+      <button class="btn alt" id="shareBtn">Share</button>
+      <button class="btn" id="newBtn">New word</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+"use strict";
+
+// ---- word lists -----------------------------------------------------------
+// ANSWERS: common words that can be the hidden solution.
+const ANSWERS = ("about above actor acute admit adopt adult after again agent agree ahead alarm album alert alike alive allow alone along alter among anger angle angry ankle apart apple apply arena argue arise armor arrow aside asset audio audit avoid awake award aware badly baker basic basil beach beard beast begin being belly below bench berry birth black blade blame bland blank blast blaze bleak blend bless blind block blood bloom blown blues blunt blush board boast bonus boost booth bound brain brake brand brass brave bread break breed brick bride brief bring brisk broad broke brook broom brown brush build built bunch burnt burst cabin cable cache camel candy canal canoe cargo carry carve catch cause cease chain chair chalk charm chart chase cheap cheat check cheek cheer chess chest chief child chill china choir chose chunk civic civil claim clash class clean clear clerk click cliff climb cling cloak clock close cloth cloud clown coach coast cobra cocoa colon color comet comic coral couch cough could count court cover crack craft crane crash crawl crazy cream creek crept crest crime crisp cross crowd crown crude cruel crumb crush curly curve cycle daily dairy dance dated dealt death debut decay decor delay delta dense depth derby devil diary digit dimly dirty ditch diver dizzy dodge doing donor doubt dough dozen draft drain drama drank drawn dread dream dress dried drift drill drink drive drone drove drown drunk dryer eager eagle early earth eaten ebony edged eight elbow elder elect elite empty enemy enjoy enter entry equal equip error essay ether event every exact exams exert exile exist extra fable faced faint fairy faith false fancy fatal fault favor feast fence ferry fetch fever fiber field fiery fifth fifty fight final first fixed flame flash fleet flesh flick fling float flock flood floor flour flown fluid flush focal focus force forge forth forty forum found frame fraud fresh fried front frost fruit fudge fully funny gauge ghost giant given giver glade gland glare glass gleam globe glory glove goals going grace grade grain grand grant grape graph grasp grass grave gravy graze great greed green greet grief grill grind groan groom group grove growl grown guard guess guest guide guilt habit handy happy harsh haste hatch haunt heart heavy hedge hello hence hobby honey honor horse hotel hound house hover human humor hurry ideal image imply inbox index inner input intro irony issue ivory jelly jewel joint jolly judge juice jumbo karma kneel knife knock known label labor laden lance lapse large laser later laugh layer learn lease least leave legal lemon level lever light limit linen liner lipid liter litre lived liver llama loading lobby local lodge logic loose lorry loser lover loyal lucky lunar lunch lying magic major maker mango maple march match maybe mayor meant medal media melon mercy merge merit merry metal meter midst might minor minus mixed model moist money month moral motor mount mourn mouse mouth movie mural music naive named nasty naval nerve never newly night ninth noble noise north notch noted novel nurse nylon occur ocean offer often olive onion onset opera orbit order organ other otter ought ounce outer owner oxide ozone paint panel panic paper party pasta patch pause peace peach pearl pedal penny perch peril petal phase phone photo piano piece pilot pinch pitch pivot pixel pizza place plaid plain plane plank plant plate plaza plead plumb plume point polar polio porch pound power press price pride prime print prior prism prize probe prone proof proud prove prune pulse punch pupil puppy purse quart queen query quest queue quick quiet quilt quite quote radar radio raise rally ranch range rapid ratio raven reach react ready realm rebel refer reign relax relay renew repay reply rider ridge rifle right rigid rinse riper risen risky ritual rival river roast robin robot rocky rogue roman rough round route royal rugby ruler rumor rural sadly saint salad salon salty sandy sauce scale scalp scare scarf scene scent scoop scope score scout scrap screw scrub sedan seize sense serve seven shade shaft shake shall shame shape share shark sharp shave sheep sheer sheet shelf shell shift shine shiny shirt shock shoot shore short shout shown shrub sight silky silly since siren sixth sixty skate skill skirt slate sleek sleep slice slide slope small smart smash smell smile smoke snack snake sneak snowy sober solar solid solve sorry sound south space spare spark speak spear speed spell spend spent spice spike spine spiral spite split spoke spoon sport spray spread spring spurt squad squat stack staff stage stain stair stake stale stamp stand stare stark start state steak steal steam steel steep steer stern stick stiff still sting stock stone stood stool store storm story stove strap straw strip stuck study stuff style sugar suite sunny super surge sushi swamp swarm swear sweat sweep sweet swell swept swift swing sword syrup table taken tally tango taper taste teach tempo tenth thank theft their theme there these thick thief thigh thing think third thorn those three threw throw thumb tibia tidal tiger tight timer tired title toast today token tonic tooth topic torch total touch tough towel tower toxic trace track trade trail train trait tramp trash treat trend trial tribe trick tried tries troop trout truck truly trunk trust truth tulip tumor tunic turbo tutor twice twist tying ultra uncle under union unite unity until upper upset urban usage usher usual vague valid value valve vapor vault venue verse video vigor villa vinyl viral virus visit vital vivid vocal vodka vogue voice voter wagon waist waste watch water waver weary weave wedge weigh weird whale wheat wheel where which while whirl white whole whose widen width wield witch witty woman women world worry worse worst worth would wound woven wrist write wrong wrote yacht yield young yours youth zebra").split(/\s+/).filter(w => w.length === 5);
+
+// Extra words accepted as valid guesses but never chosen as the answer.
+const EXTRA = ("aback abbey abide abode abort abuse acorn acrid adage adept adore aegis affix afire afoot aloft aloof amber amble amend amino ample amuse angel anime annex antic anvil aorta apron aptly ardor armed aroma askew atlas atoll attic augur aunts avert avian awful awoke axiom azure bacon badge baggy balmy banjo barge baron basin baste bathe baton bayou beget begun beige belie bough bowel brace braid bribe brine broth bugle bulky bully bumpy bureau burly buyer cadet cagey canny caper carat cater caulk cavil chafe chant chaos chard charmed chime chirp chock chord chute cider cigar cinch clamp clang clasp cleat cleft coast cocoa comfy conch coney copse coupe covet covey cower crank crass crate crave craze creed creep crick croak croft crony crust cubic cumin curio curly curry cyber cynic dandy dowel dowry drape drawl dregs dryly ducal dusky dwarf dwell dying eases eaves edict eerie egret elope elude ennui epoch epoxy erode erupt evade evoke exalt excel expel extol facet feign felon femur feral fetid filch filet filmy filth finch finer flair flaky flank flare fleck flint flirt flume flute foamy foray forgo fount foyer frail franc freak frisk frock froth frown fugue gaily gamut gaunt gauze gawky gecko genie genre girth given glean glide glint gloat gloss glyph gnash gnome godly gorge gouge gourd graft grate grime grimy gripe groin gruel gruff grunt guile guise gully gusto gusty gypsy hardy harem haven havoc hazel heady heaps heron hilly hoard hoist homer honed horde hunch husky hydro icily idiom idler igloo imbue impel inept infer ingot inlet inter irate irked ivied jaunt jetty jiffy joust juror kayak kebab khaki kiosk kitty knack knave knead kneed knelt knoll koala krill ladle lager lanky lapel larch larva lasso lathe latch leaky leash leery lefty lemur lilac limbo lithe livid llano loath locus lofty loath lumen lumpy lunge lurid lusty macaw madam magma mange mangy manor march marsh mason mauve meaty medic melee mesic mimic mince miner minty mirth miser mocha modal molar moody moose moped morph mossy motif motto mound mucus muddy mulch mummy munch mushy musky musty muted myrrh nadir nanny natal nave needy neigh nerdy newer niche niece nifty ninja nippy nomad nook nudge numbat oaken oasis obese occult odder oddly odium okapi olden ombre onyx oomph opine opium optic orbit ornate osier ottery ovary overt ovine owing paced paddy pagan palsy pansy papal parch parka parry patio payer peaty pecan penal perky pesky petty phony picky piety piggy pilaf pinky pious piper pique pithy plaza pleat plied plush poesy poise poker polka pooch poppy porous posit pouch pouty prank prawn preen prick pried primo privy prong prose proxy prude psalm pudgy puffy pulpy punky purge purse pushy putty quack quail quaint qualm quark quash quasi queasy quell quirk quota rabid radii rainy rajah ranch randy rangy raspy ratty rayon reaper rebus recap recur redux reedy refit regal rehab reins relic remit renal repel repos resin retch retro reuse revel rhino rhyme ridge rifle riled rinse riper risen roomy roost rotor rouge rouse rowdy rowel ruddy ruder rugby ruing rumba rummy runic runny rusty sable sadly saggy salvo sappy sassy satin satyr sauna savor savvy scald scaly scant scarab scoff scold scorn scour scowl scree scrim scrod scuba sedge seedy seeps segue sepia serif serum shale shalt shard shawl sheen shied shill shire shirk shoal shone shoo shorn shrew shrub shunt shush shyly siege sieve silty simmer sinew singe sissy sixth skewer skiff skimp skulk skull slack slain slang slant slash slave sleet slept slick slimy sling slink slosh sloth slump slung slunk slurp slush smelt smirk smite smith smock smoky smote snarl sneer snide snipe snoop snore snort snout snuck soggy solace sonic sooth sooty sorta spade spank spasm spawn spelt sperm spiel spiky spilt spiny splat spoil spool spore spout sprig spruce spume spunk squib stalk stall stand stash stead steed stein stilt stint stoic stoke stole stomp stony stoop stork stout strut stump stung stunt suave sully sumac sunup surly swami swath swill swine swirl swoon swoop swore sworn synod tabby taboo tacit tacky taffy taint tamer tangy tapir tardy tarot tasty tatty taunt tawny tease teddy tepee tepid terse testy thane theft theta thong thorn throb throe thyme tiara tibia tidal tiled timid tinge tipsy titan tithe toady toffee toils token tonal toned tonga topaz torso torus totem toxin trace tract trawl tread tress triad tripe trite troll troth trove truce tryst tuber tulle tumid tunic turf tusk tweak tweed tweet twerp twine twirl typal udder ulcer umber unfed unfit unify unlit unmet unwed unzip upend uphill urine usurp utile utter vapid vaunt veiny velvet venom verge verve vicar vigil viola viper visor vixen vocal vouch vowel vying wacky wafer wager waged wager waltz warty washy waspy waxen weedy welsh whack wharf wheat whelp whiff whine whisk whoop wicked widow wield wilds wince windy wiser wispy witty wooed wooer woozy wordy worm wrath wreak wreck wring wrung wryly xenon xylem yacht yearn yeast yodel yokel yucca yummy zesty zonal").split(/\s+/).filter(w => w.length === 5);
+
+// Common guesses (including popular openers) that players expect to be accepted.
+const COMMON = ("adieu aisle alien allot aloud arose atone crate irate snare saner eater easel enact erase ombre opted older plait pluck plump quake quill racer safer salsa salve samba saucy scary setup sever sewer shack shady shaky shank shear shove showy shrug skunk snail sniff snuff spicy spied spill spire spoof spook spree spurn staid stank stave stray sulky swung thump toddy twang prowl pygmy quoth rabbi ramen nasal navel nicer noisy noose nosey nutty octal offal omega outdo pacer panda pants parse paste pasty pence peony pipes pored purer queer motel mould mousy mower mucky murky metro micro midge milky manic manly marry matey mealy messy lucid lousy lowly lurch lyric macho macro madly largo latte leapt ledge leech legit lento libel lifer lingo loamy loopy gloom glued gnarl golem goody goofy gooey grail grope guava hasty hater heave hefty heist hippo hitch hoary holly hotly howdy humid hydra hyena idiot inert inlay jazzy jerky joker jumpy junta kinky lardy elfin embed ember ended exult fella filer flail flame flier flora floss fluff flung foamy folly forte freed freer frill frizz fungi gamer gaudy gavel giddy gizmo coyly crimp crypt daunt debit decry deity demon dingy dodgy donut dowdy blimp bloke brood brawl chore banjo begun bezel bicep bilge binge blurb blurt boozy botch bravo briar bribe brink briny broil brunt buddy budge buggy bulge bunny buxom cacti caddy candy canny carol carry catty chafe champ chard chasm cheer chess chomp chump churn cinch clank cleat cling clink cloak clomp clout clued colon comfy comma conic corny cramp crank creak credo creek crepe crimp crock crumb crypt cubby cuddy curdle cured curse cushy cutie cyclic dally dampen dandy dazed decal decoy defer deign delve denim dense depot deter devil dhoti diner dingo dinky dirge disco ditto dizzy dogma doily doing dolly donut dopey dosage dotty dough dowdy dowel downy dozen drab drape drawn dregs dress dried drier drone droop drove drowsy drunk dryer dually dulce dummy dumpy dunce dusty dutch dwelt dying eager eagle eaten ebbed edify eject elate elbow elder elegy elfin elide elite elope elude email embed ember embody emcee emend emery emote empty enact endow enema enjoy ennui ensue enter entry envoy epoch equal equip erect erode erupt essay ester ether ethic ethos etude evade event every evict evoke exact exalt excel exert exile exist expel extol extra exult eying fable facet faded faint fairy faith fancy fanny farce fatal fatty fauna favor feign fella femur fence feral ferry fetal fetch fetid fever fewer fiber fibre ficus fiery fifth fifty filer filet filly filmy filth final finch finer first fishy fixer fizzy fjord flack flail flair flake flaky flame flank flare flash flask fleck flick flier fling flint flirt float flock flood floor flora floss flour flout flown fluid fluke flume flung flunk flush flute foamy focal focus foggy foist folio folly foray force forge forgo forte forth forty forum found foyer frail frame frank fraud freak freed freer fresh friar fried frill frisk fritz frock frond front frost froth frown froze fruit fudge fugue fully fungi funky funny furry fussy fuzzy gaffe gaily gamer gamma gamut gassy gauge gaunt gauze gavel gawky gayer gazer gecko geeky geese genie genre ghost ghoul giant giddy gipsy girly girth given giver gizmo glade gland glare glass glaze gleam glean glide glint gloat globe gloom glory gloss glove glyph gnash gnome godly going golem golly gonad goner gonna goody gooey goofy goose gorge gouge gourd grace grade graft grail grain grand grant grape graph grasp grass grate grave gravy graze great greed green greet grief grill grime grimy grind gripe groan groin groom grope gross group grout grove growl grown gruel gruff grunt guard guava guess guest guide guild guile guilt guise gulch gully gumbo gummy guppy gusto gusty gutsy gypsy").split(/\s+/).filter(w => w.length === 5);
+
+const VALID = new Set(ANSWERS.concat(EXTRA, COMMON));
+
+// ---- state ----------------------------------------------------------------
+const ROWS = 6, COLS = 5;
+const KEY = "cipher.v1";
+let mode = "daily";              // daily | practice
+let answer = "", row = 0, col = 0, grid = [], done = false, busy = false;
+let stats = { played:0, wins:0, cur:0, max:0, dist:[0,0,0,0,0,0], lastDaily:null, dailyDone:false };
+try { const s = JSON.parse(localStorage.getItem(KEY) || "null"); if (s) stats = Object.assign(stats, s); } catch (e) {}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(stats)); } catch (e) {} }
+
+const $ = id => document.getElementById(id);
+const boardEl = $("board"), kbEl = $("kb"), toastEl = $("toast");
+
+// deterministic daily index
+function dayNumber() {
+  const start = Date.UTC(2024, 0, 1);
+  const now = new Date();
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.floor((today - start) / 86400000);
+}
+function dailyWord() {
+  const n = dayNumber();
+  // simple deterministic hash so the sequence doesn't just walk the list in order
+  let h = n * 2654435761 % 4294967296;
+  h = (h ^ (h >>> 13)) >>> 0;
+  return ANSWERS[h % ANSWERS.length];
+}
+
+// ---- build UI -------------------------------------------------------------
+function buildBoard() {
+  boardEl.innerHTML = "";
+  grid = [];
+  for (let r = 0; r < ROWS; r++) {
+    const rowEl = document.createElement("div");
+    rowEl.className = "row";
+    const cells = [];
+    for (let c = 0; c < COLS; c++) {
+      const t = document.createElement("div");
+      t.className = "tile"; t.setAttribute("role", "gridcell");
+      rowEl.appendChild(t); cells.push(t);
+    }
+    boardEl.appendChild(rowEl);
+    grid.push({ el: rowEl, cells, letters: [] });
+  }
+}
+const KB_ROWS = ["qwertyuiop", "asdfghjkl", "↵zxcvbnm⌫"];
+function buildKeyboard() {
+  kbEl.innerHTML = "";
+  KB_ROWS.forEach((rowStr, i) => {
+    const r = document.createElement("div");
+    r.className = "krow";
+    if (i === 1) { const s = document.createElement("div"); s.className = "spacer"; r.appendChild(s); }
+    for (const ch of rowStr) {
+      const b = document.createElement("button");
+      b.className = "key";
+      if (ch === "↵") { b.textContent = "Enter"; b.classList.add("wide"); b.dataset.k = "enter"; }
+      else if (ch === "⌫") { b.textContent = "Del"; b.classList.add("wide"); b.dataset.k = "back"; }
+      else { b.textContent = ch; b.dataset.k = ch; }
+      b.addEventListener("click", () => { press(b.dataset.k); b.blur(); });
+      r.appendChild(b);
+    }
+    if (i === 1) { const s = document.createElement("div"); s.className = "spacer"; r.appendChild(s); }
+    kbEl.appendChild(r);
+  });
+}
+function keyEl(ch) { return kbEl.querySelector('[data-k="' + ch + '"]'); }
+
+// ---- game flow ------------------------------------------------------------
+function newGame(which) {
+  if (which) mode = which;
+  answer = mode === "daily" ? dailyWord() : ANSWERS[(Math.random() * ANSWERS.length) | 0];
+  row = 0; col = 0; done = false; busy = false;
+  buildBoard();
+  kbEl.querySelectorAll(".key").forEach(k => k.classList.remove("hit", "near", "miss"));
+  $("modeBtn").textContent = mode === "daily" ? "Daily" : "Practice";
+  if (mode === "daily" && stats.lastDaily === dayNumber() && stats.dailyDone) {
+    toast("You already played today's word — switch to Practice for more.");
+  }
+}
+function toast(msg, ms) {
+  toastEl.textContent = msg;
+  toastEl.classList.add("show");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => toastEl.classList.remove("show"), ms || 1600);
+}
+function press(k) {
+  if (done || busy) return;
+  if (k === "enter") return submit();
+  if (k === "back") {
+    if (col > 0) {
+      col--;
+      const t = grid[row].cells[col];
+      t.textContent = ""; t.classList.remove("filled");
+      grid[row].letters.pop();
+    }
+    return;
+  }
+  if (!/^[a-z]$/.test(k) || col >= COLS) return;
+  const t = grid[row].cells[col];
+  t.textContent = k; t.classList.add("filled");
+  grid[row].letters.push(k);
+  col++;
+}
+function submit() {
+  if (col < COLS) { shake("Not enough letters"); return; }
+  const guess = grid[row].letters.join("");
+  if (!VALID.has(guess)) { shake("Not in word list"); return; }
+  busy = true;
+
+  // two-pass scoring so duplicate letters are marked correctly
+  const res = new Array(COLS).fill("miss");
+  const pool = {};
+  for (let i = 0; i < COLS; i++) {
+    if (guess[i] === answer[i]) res[i] = "hit";
+    else pool[answer[i]] = (pool[answer[i]] || 0) + 1;
+  }
+  for (let i = 0; i < COLS; i++) {
+    if (res[i] === "hit") continue;
+    const ch = guess[i];
+    if (pool[ch] > 0) { res[i] = "near"; pool[ch]--; }
+  }
+
+  const cells = grid[row].cells;
+  cells.forEach((t, i) => {
+    setTimeout(() => {
+      t.classList.add("flip");
+      setTimeout(() => t.classList.add(res[i]), 250);
+      const k = keyEl(guess[i]);
+      if (k) {
+        setTimeout(() => {
+          if (k.classList.contains("hit")) return;
+          if (res[i] === "hit") k.classList.remove("near", "miss");
+          else if (res[i] === "near" && k.classList.contains("near")) return;
+          else if (res[i] === "miss" && (k.classList.contains("near"))) return;
+          k.classList.add(res[i]);
+        }, 250);
+      }
+    }, i * 220);
+  });
+
+  const total = (COLS - 1) * 220 + 500;
+  const won = guess === answer;
+  setTimeout(() => {
+    busy = false;
+    if (won) {
+      done = true;
+      grid[row].el.classList.add("bounce");
+      finish(true, row + 1);
+    } else if (row === ROWS - 1) {
+      done = true;
+      finish(false, 0);
+    } else {
+      row++; col = 0;
+    }
+  }, total);
+}
+function shake(msg) {
+  toast(msg);
+  grid[row].el.classList.add("shake");
+  setTimeout(() => grid[row].el.classList.remove("shake"), 500);
+}
+function finish(won, tries) {
+  // Only the daily puzzle affects streaks/stats; practice is freeplay.
+  if (mode === "daily") {
+    const d = dayNumber();
+    if (stats.lastDaily !== d) {
+      stats.played++;
+      if (won) { stats.wins++; stats.dist[tries - 1]++; stats.cur = (stats.lastDaily === d - 1 || stats.lastDaily === null) ? stats.cur + 1 : 1; if (stats.cur > stats.max) stats.max = stats.cur; }
+      else stats.cur = 0;
+      stats.lastDaily = d; stats.dailyDone = true;
+      save();
+    }
+  }
+  lastResult = { won, tries, mode, day: dayNumber(), rows: grid.slice(0, won ? tries : ROWS).map(g => g.cells.map(c => c.classList.contains("hit") ? "🟩" : c.classList.contains("near") ? "🟨" : "⬛").join("")) };
+  setTimeout(() => showStats(won ? "Nicely done" : "Better luck tomorrow", won ? null : answer), won ? 1400 : 700);
+}
+let lastResult = null;
+
+// ---- stats / modals -------------------------------------------------------
+function showStats(title, revealAnswer) {
+  $("statsTitle").textContent = title || "Statistics";
+  const top = $("resultTop");
+  top.innerHTML = revealAnswer ? '<div class="answer">' + revealAnswer + "</div>" : "";
+  $("sPlayed").textContent = stats.played;
+  $("sWin").textContent = stats.played ? Math.round(stats.wins / stats.played * 100) : 0;
+  $("sCur").textContent = stats.cur;
+  $("sMax").textContent = stats.max;
+  const max = Math.max(1, ...stats.dist);
+  $("dist").innerHTML = stats.dist.map((n, i) => {
+    const cur = lastResult && lastResult.won && lastResult.tries === i + 1;
+    const w = Math.max(8, Math.round(n / max * 100));
+    return '<div class="drow"><span>' + (i + 1) + '</span><span class="dbar' + (cur ? " cur" : "") + '" style="width:' + w + '%">' + n + "</span></div>";
+  }).join("");
+  $("statsModal").classList.add("show");
+}
+function shareText() {
+  if (!lastResult) return "Cipher — https://linweihan7.github.io/college-toolkit/cipher/";
+  const head = "Cipher " + (lastResult.mode === "daily" ? "#" + lastResult.day : "practice") + " " + (lastResult.won ? lastResult.tries : "X") + "/6";
+  return head + "\n\n" + lastResult.rows.join("\n") + "\n\nhttps://linweihan7.github.io/college-toolkit/cipher/";
+}
+$("shareBtn").onclick = async () => {
+  const txt = shareText();
+  try {
+    if (navigator.share) { await navigator.share({ text: txt }); return; }
+    await navigator.clipboard.writeText(txt);
+    toast("Copied to clipboard");
+  } catch (e) { toast("Copy failed — select and copy manually"); }
+};
+$("newBtn").onclick = () => { $("statsModal").classList.remove("show"); newGame("practice"); };
+$("statsBtn").onclick = () => showStats("Statistics", null);
+$("help").onclick = () => $("helpModal").classList.add("show");
+$("modeBtn").onclick = () => newGame(mode === "daily" ? "practice" : "daily");
+document.querySelectorAll("[data-close]").forEach(b => b.onclick = e => e.target.closest(".modal").classList.remove("show"));
+document.querySelectorAll(".modal").forEach(m => m.addEventListener("click", e => { if (e.target === m) m.classList.remove("show"); }));
+
+window.addEventListener("keydown", e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const open = document.querySelector(".modal.show");
+  if (e.key === "Escape" && open) { open.classList.remove("show"); return; }
+  if (open) return;
+  if (e.key === "Enter") { e.preventDefault(); press("enter"); }
+  else if (e.key === "Backspace") { e.preventDefault(); press("back"); }
+  else if (/^[a-zA-Z]$/.test(e.key)) press(e.key.toLowerCase());
+});
+
+// ---- boot -----------------------------------------------------------------
+buildKeyboard();
+newGame("daily");
+if (!stats.played && !localStorage.getItem(KEY + ".seen")) {
+  $("helpModal").classList.add("show");
+  try { localStorage.setItem(KEY + ".seen", "1"); } catch (e) {}
+}
+
+window.Cipher = {
+  get answer() { return answer; },
+  get mode() { return mode; },
+  get done() { return done; },
+  get row() { return row; },
+  type(word) { for (const ch of word) press(ch); },
+  enter() { press("enter"); },
+  newGame,
+  // test hooks
+  _setAnswer(w) { answer = w; },
+  _answers: ANSWERS,
+  _valid: VALID,
+};
+})();
+</script>
+</body>
+</html>

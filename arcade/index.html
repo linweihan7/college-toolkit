@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Arcade — three games, no sign-in</title>
+<meta name="description" content="Three browser games you can play right now: Echo, Neon Siege, and Cipher. No account, no install, works on any device.">
+<meta name="theme-color" content="#0b0d12">
+<meta property="og:title" content="Arcade">
+<meta property="og:description" content="Three browser games you can play right now. No account, no install.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>%F0%9F%95%B9%EF%B8%8F</text></svg>">
+<style>
+  :root{
+    --ground:#0b0d12;
+    --raised:#12151d;
+    --line:#222736;
+    --text:#eef0f6;
+    --muted:#858da3;      /* neutral carries a slight blue bias, matching the ground */
+    --echo:#19e3ff;
+    --siege:#ff2e88;
+    --cipher:#4d9d5f;
+    --mono:ui-monospace,"SF Mono","Cascadia Mono","Roboto Mono",Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *,*::before,*::after{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--ground); color:var(--text); font-family:var(--sans);
+    min-height:100%; line-height:1.55;
+    background-image:
+      radial-gradient(90% 55% at 50% -10%, rgba(25,227,255,.07), transparent 62%),
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size:auto, 46px 46px, 46px 46px;
+    background-position:center top, center, center;
+  }
+  .shell{max-width:900px; margin:0 auto; padding:clamp(40px,9vw,88px) 20px 64px}
+
+  header{text-align:center; margin-bottom:clamp(34px,6vw,58px)}
+  .eyebrow{
+    font-family:var(--mono); font-size:11px; letter-spacing:.34em; text-transform:uppercase;
+    color:var(--muted); margin-bottom:16px;
+  }
+  h1{
+    margin:0 0 14px; font-size:clamp(40px,11vw,84px); font-weight:800; letter-spacing:-.02em;
+    line-height:.95; text-wrap:balance;
+  }
+  .sub{margin:0 auto; max-width:46ch; color:var(--muted); font-size:clamp(15px,2.2vw,17px)}
+  .sub b{color:var(--text); font-weight:600}
+
+  .games{display:flex; flex-direction:column; gap:16px}
+  .game{
+    --accent:var(--echo);
+    display:grid; grid-template-columns:96px 1fr auto; align-items:center; gap:20px;
+    background:var(--raised); border:1px solid var(--line); border-radius:14px;
+    padding:20px 22px; text-decoration:none; color:inherit;
+    transition:border-color .16s ease, transform .16s ease, box-shadow .16s ease;
+  }
+  .game:hover,.game:focus-visible{
+    border-color:var(--accent); transform:translateY(-2px);
+    box-shadow:0 12px 34px rgba(0,0,0,.45), 0 0 0 1px var(--accent) inset;
+    outline:none;
+  }
+  .game:focus-visible{outline:2px solid var(--accent); outline-offset:3px}
+
+  /* each mark is drawn from the game's own visual language */
+  .mark{width:96px; height:72px; border-radius:9px; background:#080a0f; position:relative; overflow:hidden; flex:none}
+  .mark::after{content:""; position:absolute; inset:0; box-shadow:inset 0 0 22px rgba(0,0,0,.75)}
+  .m-echo i{position:absolute; top:50%; left:50%; translate:-50% -50%; border:1.5px solid var(--echo); border-radius:50%; opacity:0}
+  .m-echo i:nth-child(1){width:16px;height:16px; animation:ripple 2.6s linear infinite}
+  .m-echo i:nth-child(2){width:16px;height:16px; animation:ripple 2.6s linear infinite .85s}
+  .m-echo i:nth-child(3){width:16px;height:16px; animation:ripple 2.6s linear infinite 1.7s}
+  @keyframes ripple{0%{opacity:.9; scale:.3}100%{opacity:0; scale:4.4}}
+  .m-siege i{position:absolute; background:var(--siege); border-radius:2px}
+  .m-siege i:nth-child(1){width:9px;height:9px; left:18%; top:26%; rotate:45deg; animation:drift 3s ease-in-out infinite alternate}
+  .m-siege i:nth-child(2){width:7px;height:7px; left:68%; top:60%; rotate:45deg; animation:drift 3.6s ease-in-out infinite alternate-reverse}
+  .m-siege i:nth-child(3){width:13px;height:3px; left:42%; top:47%; background:#fff; border-radius:3px; animation:zap 1.5s linear infinite}
+  @keyframes drift{to{translate:9px -7px}}
+  @keyframes zap{0%{translate:-16px 0; opacity:0}20%{opacity:1}100%{translate:20px 0; opacity:0}}
+  .m-cipher{display:grid; grid-template-columns:repeat(5,1fr); gap:3px; padding:14px 10px}
+  .m-cipher i{border-radius:2px; background:#1d222c; border:1px solid #272d3a}
+  .m-cipher i.on{background:var(--cipher); border-color:var(--cipher); animation:flipin .5s ease both}
+  .m-cipher i.near{background:#c8a53d; border-color:#c8a53d; animation:flipin .5s ease both}
+  .m-cipher i:nth-child(2){animation-delay:.1s} .m-cipher i:nth-child(3){animation-delay:.2s}
+  .m-cipher i:nth-child(4){animation-delay:.3s} .m-cipher i:nth-child(5){animation-delay:.4s}
+  @keyframes flipin{from{transform:rotateX(90deg)}to{transform:rotateX(0)}}
+
+  .meta h2{margin:0 0 5px; font-size:clamp(19px,3vw,23px); letter-spacing:.01em}
+  .meta p{margin:0 0 9px; color:var(--muted); font-size:14.5px; max-width:52ch}
+  .tags{display:flex; gap:7px; flex-wrap:wrap}
+  .tag{
+    font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--muted); border:1px solid var(--line); border-radius:20px; padding:3px 9px;
+  }
+  .go{
+    font-family:var(--mono); font-size:12px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--accent); white-space:nowrap; display:flex; align-items:center; gap:7px;
+  }
+  .go span{font-size:16px; transition:translate .16s ease}
+  .game:hover .go span{translate:4px 0}
+
+  footer{margin-top:42px; text-align:center; color:var(--muted); font-family:var(--mono); font-size:11.5px; letter-spacing:.12em}
+  footer p{margin:6px 0}
+
+  @media (max-width:620px){
+    .game{grid-template-columns:64px 1fr; gap:15px; padding:17px 18px}
+    .mark{width:64px; height:56px}
+    .go{grid-column:1 / -1; justify-content:flex-start; margin-top:2px}
+    .meta p{font-size:13.5px}
+  }
+  @media (prefers-reduced-motion:reduce){ *{animation:none !important; transition:none !important} }
+</style>
+</head>
+<body>
+<div class="shell">
+  <header>
+    <div class="eyebrow">no account · no install · just play</div>
+    <h1>Arcade</h1>
+    <p class="sub">Three games that run entirely in your browser. Open a link, start playing — <b>works on phones and laptops</b>, and nothing is downloaded.</p>
+  </header>
+
+  <div class="games">
+    <a class="game" href="../echo/" style="--accent:var(--echo)">
+      <div class="mark m-echo"><i></i><i></i><i></i></div>
+      <div class="meta">
+        <h2>Echo</h2>
+        <p>You're a bat in a pitch-black cave. Ping to light up the walls — but every ping tells the creature exactly where you are.</p>
+        <div class="tags"><span class="tag">Maze</span><span class="tag">Stealth</span><span class="tag">5 levels</span></div>
+      </div>
+      <div class="go">Play <span>→</span></div>
+    </a>
+
+    <a class="game" href="../neon-siege/" style="--accent:var(--siege)">
+      <div class="mark m-siege"><i></i><i></i><i></i></div>
+      <div class="meta">
+        <h2>Neon Siege</h2>
+        <p>Twin-stick arena survival. Dodge, dash and blast through endless waves, picking a new upgrade every time you clear one.</p>
+        <div class="tags"><span class="tag">Shooter</span><span class="tag">Upgrades</span><span class="tag">Endless</span></div>
+      </div>
+      <div class="go">Play <span>→</span></div>
+    </a>
+
+    <a class="game" href="../cipher/" style="--accent:var(--cipher)">
+      <div class="mark m-cipher"><i class="on"></i><i></i><i class="near"></i><i></i><i class="on"></i></div>
+      <div class="meta">
+        <h2>Cipher</h2>
+        <p>Guess the five-letter word in six tries. One shared puzzle each day, plus unlimited practice rounds whenever you want more.</p>
+        <div class="tags"><span class="tag">Word</span><span class="tag">Daily</span><span class="tag">Shareable</span></div>
+      </div>
+      <div class="go">Play <span>→</span></div>
+    </a>
+  </div>
+
+  <footer>
+    <p>Built with plain HTML, CSS and JavaScript — no frameworks, no trackers.</p>
+  </footer>
+</div>
+</body>
+</html>

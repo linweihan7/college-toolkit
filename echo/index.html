@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Echo — sonar in the dark</title>
+<meta name="description" content="You are a bat in a pitch-black cave. Ping to see, but every ping draws the creature closer. Five mazes. Free to play in your browser.">
+<meta name="theme-color" content="#000000">
+<meta property="og:title" content="Echo">
+<meta property="og:description" content="A bat, a pitch-black cave, and something that hunts your sonar.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>%F0%9F%A6%87</text></svg>">
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #000; overflow: hidden;
+    font-family: "Courier New", monospace;
+  }
+  #wrap {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: #000;
+  }
+  canvas {
+    display: block; background: #000;
+    box-shadow: 0 0 60px rgba(0, 200, 255, 0.05);
+  }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c" width="960" height="640"></canvas></div>
+<script>
+(() => {
+"use strict";
+
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+const W = 960, H = 640;
+const HUD_TOP = 56;
+
+function fitCanvas() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.width  = Math.floor(W * s) + "px";
+  canvas.style.height = Math.floor(H * s) + "px";
+}
+window.addEventListener("resize", fitCanvas);
+fitCanvas();
+
+const LEVELS = [
+  { cols: 8,  rows: 6,  cspeed: 34 },
+  { cols: 10, rows: 8,  cspeed: 46 },
+  { cols: 12, rows: 9,  cspeed: 58 },
+  { cols: 14, rows: 11, cspeed: 72 },
+  { cols: 16, rows: 12, cspeed: 88 },
+];
+const PLAYER_SPEED = 135;
+const PING_SPEED   = 640;
+const PING_MAXR    = 1250;
+const PING_COOLDOWN = 300;
+const WALL_FADE    = 2000;
+const EXIT_FADE    = 2600;
+const CREAT_FADE   = 1500;
+const MAX_PINGS    = 8;
+
+let state = "start";
+let currentLevel = 1;
+let cs = 40;
+let cols = 8, rows = 6;
+let segs = [];
+let bounds = { minX: 0, minY: 0, maxX: W, maxY: H };
+const player   = { x: 0, y: 0 };
+const creature = { x: 0, y: 0, speed: 40, target: null, wanderA: 0, wanderTimer: 0 };
+const exit     = { x: 0, y: 0 };
+let pings = [];
+let killRadius = 20, playerRadius = 8, exitReach = 16;
+let lastPingAt = -9999;
+let flash = { msg: "", until: 0 };
+const keys = Object.create(null);
+
+// ---- maze generation (recursive backtracker) ----
+function genMaze(cols, rows) {
+  const cells = [];
+  for (let c = 0; c < cols; c++) {
+    cells[c] = [];
+    for (let r = 0; r < rows; r++) cells[c][r] = { N:true, E:true, S:true, W:true, v:false };
+  }
+  const stack = [[0, 0]];
+  cells[0][0].v = true;
+  while (stack.length) {
+    const [x, y] = stack[stack.length - 1];
+    const nb = [];
+    if (y > 0        && !cells[x][y - 1].v) nb.push(["N", x, y - 1]);
+    if (x < cols - 1 && !cells[x + 1][y].v) nb.push(["E", x + 1, y]);
+    if (y < rows - 1 && !cells[x][y + 1].v) nb.push(["S", x, y + 1]);
+    if (x > 0        && !cells[x - 1][y].v) nb.push(["W", x - 1, y]);
+    if (!nb.length) { stack.pop(); continue; }
+    const [dir, nx, ny] = nb[(Math.random() * nb.length) | 0];
+    if (dir === "N") { cells[x][y].N = false; cells[nx][ny].S = false; }
+    if (dir === "E") { cells[x][y].E = false; cells[nx][ny].W = false; }
+    if (dir === "S") { cells[x][y].S = false; cells[nx][ny].N = false; }
+    if (dir === "W") { cells[x][y].W = false; cells[nx][ny].E = false; }
+    cells[nx][ny].v = true;
+    stack.push([nx, ny]);
+  }
+  return cells;
+}
+function buildSegments(cells, cols, rows, cs, offX, offY) {
+  const out = [];
+  for (let c = 0; c < cols; c++) {
+    for (let r = 0; r < rows; r++) {
+      const x0 = offX + c * cs, y0 = offY + r * cs;
+      const x1 = x0 + cs, y1 = y0 + cs;
+      const cell = cells[c][r];
+      if (cell.N) out.push([x0, y0, x1, y0]);
+      if (cell.W) out.push([x0, y0, x0, y1]);
+      if (c === cols - 1 && cell.E) out.push([x1, y0, x1, y1]);
+      if (r === rows - 1 && cell.S) out.push([x0, y1, x1, y1]);
+    }
+  }
+  return out;
+}
+
+function startLevel(n) {
+  currentLevel = n;
+  const cfg = LEVELS[n - 1];
+  cols = cfg.cols; rows = cfg.rows;
+
+  const areaW = W - 80, areaH = H - HUD_TOP - 30;
+  cs = Math.floor(Math.min(areaW / cols, areaH / rows));
+  const mazeW = cs * cols, mazeH = cs * rows;
+  const offX = Math.round((W - mazeW) / 2);
+  const offY = Math.round(HUD_TOP + (areaH - mazeH) / 2) + 12;
+
+  // Keep the creature inside the maze (it must never drift off-screen).
+  const pad = cs * 0.4;
+  bounds = { minX: offX + pad, minY: offY + pad, maxX: offX + mazeW - pad, maxY: offY + mazeH - pad };
+
+  const cells = genMaze(cols, rows);
+  segs = buildSegments(cells, cols, rows, cs, offX, offY);
+
+  playerRadius = cs * 0.18;
+  killRadius   = cs * 0.50;
+  exitReach    = cs * 0.42;
+
+  player.x = offX + cs * 0.5;
+  player.y = offY + cs * 0.5;
+  exit.x   = offX + (cols - 0.5) * cs;
+  exit.y   = offY + (rows - 0.5) * cs;
+
+  creature.x = offX + (cols - 0.5) * cs;
+  creature.y = offY + cs * 0.5;
+  creature.speed = cfg.cspeed;
+  creature.target = null;
+  creature.wanderA = Math.random() * Math.PI * 2;
+  creature.wanderTimer = 1 + Math.random();
+
+  pings = [];
+  lastPingAt = -9999;
+  nextBeat = performance.now() + 400;
+  flash = { msg: "LEVEL " + n + " / 5", until: performance.now() + 1600 };
+  state = "playing";
+}
+
+// ---- audio (best-effort; never allowed to break the game) ----
+let actx = null;
+let nextBeat = 0;
+function initAudio() {
+  if (!actx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) actx = new AC();
+  }
+  if (actx && actx.state === "suspended") actx.resume();
+}
+function playPing() {
+  if (!actx || actx.state !== "running") return;
+  try {
+    const t = actx.currentTime;
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(1250, t);
+    o.frequency.exponentialRampToValueAtTime(320, t + 0.35);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.2, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+    o.connect(g).connect(actx.destination);
+    o.start(t); o.stop(t + 0.42);
+  } catch (e) {}
+}
+function playThump(vol) {
+  if (!actx || actx.state !== "running") return;
+  try {
+    const t = actx.currentTime;
+    const beat = (delay, v) => {
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = "sine";
+      o.frequency.setValueAtTime(72, t + delay);
+      o.frequency.exponentialRampToValueAtTime(40, t + delay + 0.12);
+      g.gain.setValueAtTime(0.0001, t + delay);
+      g.gain.exponentialRampToValueAtTime(v, t + delay + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + delay + 0.18);
+      o.connect(g).connect(actx.destination);
+      o.start(t + delay); o.stop(t + delay + 0.2);
+    };
+    beat(0, vol);
+    beat(0.14, vol * 0.65);
+  } catch (e) {}
+}
+function playDeath() {
+  if (!actx || actx.state !== "running") return;
+  try {
+    const t = actx.currentTime;
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = "sawtooth";
+    o.frequency.setValueAtTime(220, t);
+    o.frequency.exponentialRampToValueAtTime(30, t + 0.9);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.3, t + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.0);
+    o.connect(g).connect(actx.destination);
+    o.start(t); o.stop(t + 1.05);
+  } catch (e) {}
+}
+function playWin() {
+  if (!actx || actx.state !== "running") return;
+  try {
+    const t = actx.currentTime;
+    [523, 659, 784, 1046].forEach((f, i) => {
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = "sine";
+      o.frequency.setValueAtTime(f, t + i * 0.12);
+      g.gain.setValueAtTime(0.0001, t + i * 0.12);
+      g.gain.exponentialRampToValueAtTime(0.2, t + i * 0.12 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.12 + 0.25);
+      o.connect(g).connect(actx.destination);
+      o.start(t + i * 0.12); o.stop(t + i * 0.12 + 0.3);
+    });
+  } catch (e) {}
+}
+
+// ---- geometry ----
+function distSeg(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const l2 = dx * dx + dy * dy;
+  if (l2 === 0) return Math.hypot(px - x1, py - y1);
+  let t = ((px - x1) * dx + (py - y1) * dy) / l2;
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+}
+function collides(px, py) {
+  for (let i = 0; i < segs.length; i++) {
+    const s = segs[i];
+    if (distSeg(px, py, s[0], s[1], s[2], s[3]) < playerRadius) return true;
+  }
+  return false;
+}
+const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
+
+function litBy(px, py, now, fade) {
+  let b = 0;
+  for (let i = 0; i < pings.length; i++) {
+    const p = pings[i];
+    const d = Math.hypot(px - p.ox, py - p.oy);
+    const arrival = p.start + (d / PING_SPEED) * 1000;
+    if (now >= arrival) {
+      const v = clamp01(1 - (now - arrival) / fade);
+      if (v > b) b = v;
+    }
+  }
+  return b;
+}
+function litSeg(s, now, fade) {
+  let b = 0;
+  for (let i = 0; i < pings.length; i++) {
+    const p = pings[i];
+    const d = distSeg(p.ox, p.oy, s[0], s[1], s[2], s[3]);
+    const arrival = p.start + (d / PING_SPEED) * 1000;
+    if (now >= arrival) {
+      const v = clamp01(1 - (now - arrival) / fade);
+      if (v > b) b = v;
+    }
+  }
+  return b;
+}
+
+// ---- update ----
+function update(now, dt) {
+  let vx = 0, vy = 0;
+  if (keys["KeyW"] || keys["ArrowUp"])    vy -= 1;
+  if (keys["KeyS"] || keys["ArrowDown"])  vy += 1;
+  if (keys["KeyA"] || keys["ArrowLeft"])  vx -= 1;
+  if (keys["KeyD"] || keys["ArrowRight"]) vx += 1;
+  if (vx || vy) {
+    const m = Math.hypot(vx, vy);
+    vx = vx / m * PLAYER_SPEED * dt;
+    vy = vy / m * PLAYER_SPEED * dt;
+    if (!collides(player.x + vx, player.y)) player.x += vx;
+    if (!collides(player.x, player.y + vy)) player.y += vy;
+  }
+
+  const c = creature;
+  if (c.target) {
+    const dx = c.target.x - c.x, dy = c.target.y - c.y;
+    const d = Math.hypot(dx, dy) || 1;
+    if (d > cs * 0.25) { c.x += dx / d * c.speed * dt; c.y += dy / d * c.speed * dt; }
+  } else {
+    c.wanderTimer -= dt;
+    if (c.wanderTimer <= 0) { c.wanderA = Math.random() * Math.PI * 2; c.wanderTimer = 1.5 + Math.random() * 2; }
+    c.x += Math.cos(c.wanderA) * c.speed * 0.35 * dt;
+    c.y += Math.sin(c.wanderA) * c.speed * 0.35 * dt;
+  }
+  // Clamp the creature to the play area so it can't wander into the void.
+  if (c.x < bounds.minX) { c.x = bounds.minX; c.wanderA = Math.random() * Math.PI * 2; }
+  if (c.x > bounds.maxX) { c.x = bounds.maxX; c.wanderA = Math.random() * Math.PI * 2; }
+  if (c.y < bounds.minY) { c.y = bounds.minY; c.wanderA = Math.random() * Math.PI * 2; }
+  if (c.y > bounds.maxY) { c.y = bounds.maxY; c.wanderA = Math.random() * Math.PI * 2; }
+
+  const life = (PING_MAXR / PING_SPEED) * 1000 + WALL_FADE;
+  pings = pings.filter(p => now - p.start < life);
+
+  const pd = Math.hypot(player.x - c.x, player.y - c.y);
+  const maxHear = 560;
+  if (pd < maxHear) {
+    const f = clamp01((pd - killRadius) / (maxHear - killRadius));
+    const interval = 250 + f * (1400 - 250);
+    const vol = 0.5 - f * (0.5 - 0.05);
+    if (now >= nextBeat) { playThump(vol); nextBeat = now + interval; }
+  } else {
+    nextBeat = now + 500;
+  }
+
+  if (Math.hypot(player.x - exit.x, player.y - exit.y) < exitReach) {
+    if (currentLevel < LEVELS.length) { playWin(); startLevel(currentLevel + 1); }
+    else { playWin(); state = "victory"; }
+    return;
+  }
+  if (pd < killRadius) { playDeath(); state = "dead"; }
+}
+
+// ---- render ----
+function render(now) {
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, W, H);
+
+  if (state === "start")   { drawHUD(); drawStart();   return; }
+
+  // Walls. Glow is faked with a wide translucent underlay + a bright core,
+  // instead of ctx.shadowBlur — blurring hundreds of segments per frame stalls
+  // (and can crash) the canvas renderer.
+  ctx.lineCap = "round";
+  const coreW = Math.max(2, cs * 0.05);
+  for (let i = 0; i < segs.length; i++) {
+    const b = litSeg(segs[i], now, WALL_FADE);
+    if (b <= 0.01) continue;
+    const s = segs[i];
+    ctx.globalAlpha = b * 0.22;
+    ctx.strokeStyle = "#00e5ff";
+    ctx.lineWidth = coreW + 7;
+    ctx.beginPath(); ctx.moveTo(s[0], s[1]); ctx.lineTo(s[2], s[3]); ctx.stroke();
+    ctx.globalAlpha = b;
+    ctx.strokeStyle = "#7df9ff";
+    ctx.lineWidth = coreW;
+    ctx.beginPath(); ctx.moveTo(s[0], s[1]); ctx.lineTo(s[2], s[3]); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  const eb = litBy(exit.x, exit.y, now, EXIT_FADE);
+  if (eb > 0.01) {
+    const pulse = 0.75 + 0.25 * Math.sin(now / 180);
+    const rr = exitReach * (0.9 + 0.15 * Math.sin(now / 250));
+    ctx.globalAlpha = eb;
+    ctx.shadowBlur = 22 * eb; ctx.shadowColor = "#39ff14";
+    ctx.strokeStyle = "#7dff5c"; ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(exit.x, exit.y - rr); ctx.lineTo(exit.x + rr, exit.y);
+    ctx.lineTo(exit.x, exit.y + rr); ctx.lineTo(exit.x - rr, exit.y);
+    ctx.closePath(); ctx.stroke();
+    ctx.globalAlpha = eb * pulse;
+    ctx.fillStyle = "#39ff14";
+    ctx.beginPath(); ctx.arc(exit.x, exit.y, rr * 0.28, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+  }
+
+  for (let i = 0; i < pings.length; i++) {
+    const p = pings[i];
+    const rad = ((now - p.start) / 1000) * PING_SPEED;
+    if (rad >= PING_MAXR) continue;
+    const a = clamp01(1 - rad / PING_MAXR) * 0.5;
+    if (a <= 0.01) continue;
+    ctx.globalAlpha = a;
+    ctx.strokeStyle = "#00e5ff"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(p.ox, p.oy, rad, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  const cb = litBy(creature.x, creature.y, now, CREAT_FADE);
+  if (cb > 0.01) {
+    const r = cs * 0.34;
+    ctx.globalAlpha = cb;
+    ctx.strokeStyle = "#ff4d4d"; ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    const spikes = 9;
+    for (let k = 0; k <= spikes; k++) {
+      const ang = (k / spikes) * Math.PI * 2;
+      const rr = r * (k % 2 ? 0.72 : 1);
+      const x = creature.x + Math.cos(ang) * rr;
+      const y = creature.y + Math.sin(ang) * rr;
+      k === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.closePath(); ctx.stroke();
+    ctx.fillStyle = "#ff2b2b";
+    ctx.beginPath(); ctx.arc(creature.x - r * 0.28, creature.y - r * 0.1, r * 0.13, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(creature.x + r * 0.28, creature.y - r * 0.1, r * 0.13, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.fillStyle = "rgba(120,240,255,0.85)";
+  ctx.beginPath(); ctx.arc(player.x, player.y, Math.max(4, cs * 0.13), 0, Math.PI * 2); ctx.fill();
+
+  drawHUD();
+  if (state === "dead")    drawDead();
+  if (state === "victory") drawVictory();
+}
+
+function textCenter(str, y, size, color, weight) {
+  ctx.fillStyle = color;
+  ctx.font = (weight || "") + " " + size + 'px "Courier New", monospace';
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(str, W / 2, y);
+}
+function drawHUD() {
+  if (state === "playing" || state === "dead" || state === "victory") {
+    ctx.fillStyle = "rgba(120,240,255,0.85)";
+    ctx.font = 'bold 20px "Courier New", monospace';
+    ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.fillText("LEVEL " + currentLevel + " / 5", 24, 28);
+
+    ctx.fillStyle = "rgba(120,240,255,0.4)";
+    ctx.font = '14px "Courier New", monospace';
+    ctx.textAlign = "right";
+    ctx.fillText("SPACE ping   ·   WASD move", W - 24, 28);
+
+    if (flash.until > performance.now()) {
+      const a = clamp01((flash.until - performance.now()) / 600);
+      ctx.globalAlpha = Math.min(1, a);
+      textCenter(flash.msg, H / 2, 34, "rgba(120,240,255,0.9)", "bold");
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+function drawStart() {
+  textCenter("E C H O", H / 2 - 150, 72, "#00e5ff", "bold");
+  textCenter("You are a bat, lost in a pitch-black cave.", H / 2 - 78, 20, "rgba(150,245,255,0.8)");
+  const lines = [
+    ["WASD", "move through the dark"],
+    ["SPACE", "emit a sonar ping — walls glow, then fade"],
+    ["", "the green diamond is the exit — reach it"],
+    ["", "something hunts your pings. you'll hear it."],
+    ["", "5 levels. don't get caught."],
+  ];
+  let y = H / 2 - 30;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  for (const [k, v] of lines) {
+    ctx.font = '17px "Courier New", monospace';
+    if (k) { ctx.fillStyle = "#39ff14"; ctx.fillText(k + "  —  " + v, W / 2, y); }
+    else { ctx.fillStyle = "rgba(150,245,255,0.65)"; ctx.fillText(v, W / 2, y); }
+    y += 30;
+  }
+  const blink = 0.5 + 0.5 * Math.sin(performance.now() / 350);
+  ctx.globalAlpha = blink;
+  textCenter("press  SPACE  to descend", H / 2 + 150, 22, "#00e5ff", "bold");
+  ctx.globalAlpha = 1;
+}
+function drawDead() {
+  ctx.fillStyle = "rgba(10,0,0,0.72)";
+  ctx.fillRect(0, 0, W, H);
+  textCenter("CAUGHT", H / 2 - 40, 64, "#ff3b3b", "bold");
+  textCenter("the creature found you in the dark.", H / 2 + 18, 20, "rgba(255,120,120,0.85)");
+  const blink = 0.5 + 0.5 * Math.sin(performance.now() / 350);
+  ctx.globalAlpha = blink;
+  textCenter("press  SPACE  to retry level " + currentLevel, H / 2 + 70, 20, "#ff6b6b", "bold");
+  ctx.globalAlpha = 1;
+}
+function drawVictory() {
+  ctx.fillStyle = "rgba(0,10,4,0.72)";
+  ctx.fillRect(0, 0, W, H);
+  textCenter("ESCAPED", H / 2 - 40, 64, "#39ff14", "bold");
+  textCenter("you found daylight. the cave keeps its secrets.", H / 2 + 18, 20, "rgba(150,255,150,0.85)");
+  const blink = 0.5 + 0.5 * Math.sin(performance.now() / 350);
+  ctx.globalAlpha = blink;
+  textCenter("press  SPACE  to play again", H / 2 + 70, 20, "#7dff5c", "bold");
+  ctx.globalAlpha = 1;
+}
+
+function emitPing(now) {
+  if (now - lastPingAt < PING_COOLDOWN) return;
+  lastPingAt = now;
+  pings.push({ ox: player.x, oy: player.y, start: now });
+  if (pings.length > MAX_PINGS) pings.shift();
+  creature.target = { x: player.x, y: player.y };
+  playPing();
+}
+window.addEventListener("keydown", (e) => {
+  if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) e.preventDefault();
+  initAudio();
+  if (state !== "playing") {
+    if (e.code === "Space" || e.code === "Enter") {
+      if (state === "dead") startLevel(currentLevel);
+      else startLevel(1);
+    }
+    return;
+  }
+  keys[e.code] = true;
+  if (e.code === "Space") emitPing(performance.now());
+});
+window.addEventListener("keyup", (e) => { keys[e.code] = false; });
+// tap to ping / start, for trackpads and touchscreens
+canvas.addEventListener("pointerdown", () => {
+  initAudio();
+  if (state === "playing") emitPing(performance.now());
+  else if (state === "dead") startLevel(currentLevel);
+  else startLevel(1);
+});
+
+let last = performance.now();
+function loop(t) {
+  let dt = (t - last) / 1000;
+  last = t;
+  if (dt > 0.05) dt = 0.05;
+  // Never let a single bad frame kill the loop (which would freeze the screen black).
+  try {
+    if (state === "playing") update(t, dt);
+    render(t);
+  } catch (err) {
+    if (!window.__echoErr) { window.__echoErr = String((err && err.stack) || err); console.error("Echo loop error:", err); }
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+window.Echo = {
+  get state() { return state; },
+  get level() { return currentLevel; },
+  player, creature, exit,
+  start()      { startLevel(1); },
+  forceExit()  { if (state === "playing") { player.x = exit.x; player.y = exit.y; } },
+  ping()       { if (state === "playing") emitPing(performance.now()); },
+};
+})();
+</script>
+</body>
+</html>
