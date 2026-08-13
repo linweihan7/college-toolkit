@@ -28,7 +28,9 @@
     font-family:var(--font); color:var(--text); user-select:none;
     -webkit-user-select:none; touch-action:none;
   }
-  #gm{position:absolute; inset:0; display:block; cursor:crosshair}
+  /* width/height must be explicit: a canvas is a replaced element, so `inset:0`
+     alone leaves `width:auto` resolving to its intrinsic (backing-store) size. */
+  #gm{position:absolute; top:0; left:0; width:100%; height:100%; display:block; cursor:crosshair}
   .overlay{
     position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
     padding:24px; z-index:10; background:radial-gradient(120% 120% at 50% 0%, rgba(25,227,255,.06), transparent 60%);
@@ -245,6 +247,7 @@ function resize() {
   DPR = Math.min(2, window.devicePixelRatio || 1);
   W = wrap.clientWidth; H = wrap.clientHeight;
   canvas.width = Math.floor(W * DPR); canvas.height = Math.floor(H * DPR);
+  canvas.style.width = W + "px"; canvas.style.height = H + "px";
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 }
 window.addEventListener("resize", resize);
