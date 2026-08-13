@@ -65,6 +65,32 @@ def to_wav_16k_mono(src: Path, dst: Path) -> Path:
     )
 
 
+def enhance_wav(path: Path) -> None:
+    """In-place light cleanup of the 16 kHz wav before transcription: high-pass to
+    remove low-frequency rumble, then RMS-normalize quiet recordings (capped so we
+    don't just amplify noise). Helps the common 'too quiet / distant mic' case."""
+    import numpy as np
+
+    try:
+        from scipy.signal import butter, sosfilt
+    except Exception:
+        return
+    with wave.open(str(path), "rb") as wf:
+        sr, nch, sw, n = wf.getframerate(), wf.getnchannels(), wf.getsampwidth(), wf.getnframes()
+        raw = wf.readframes(n)
+    a = np.frombuffer(raw, dtype="int16").astype("float32")
+    if a.size == 0:
+        return
+    sos = butter(2, 80.0 / (sr / 2), btype="high", output="sos")
+    a = sosfilt(sos, a)
+    rms = float(np.sqrt(np.mean(a ** 2)))
+    if rms > 1:
+        a *= min(0.1 * 32767 / rms, 6.0)   # ~-20 dBFS RMS target, max 6x boost
+    a = np.clip(a, -32768, 32767).astype("int16")
+    with wave.open(str(path), "wb") as wf:
+        wf.setnchannels(nch); wf.setsampwidth(sw); wf.setframerate(sr); wf.writeframes(a.tobytes())
+
+
 def wav_duration(path: Path) -> float:
     with wave.open(str(path), "rb") as wf:
         frames = wf.getnframes()

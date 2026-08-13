@@ -41,6 +41,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); display: flex; heigh
 .item.active { background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
 .item .t { font-size: 13.5px; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item .m { font-size: 11px; color: var(--muted); margin-top: 2px; display: flex; gap: 6px; align-items: center; }
+.series-tag { font-size: 10px; padding: 1px 6px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-weight: 500; }
 .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
 .dot.done { background: var(--ok); } .dot.processing, .dot.queued { background: var(--accent); animation: pulse 1.2s infinite; }
 .dot.error { background: var(--danger); }

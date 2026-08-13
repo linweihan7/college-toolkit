@@ -32,6 +32,8 @@ def _run(meeting_id: str) -> None:
     try:
         _progress(meeting_id, "準備音訊中", 5)
         audio.to_wav_16k_mono(src, wav)
+        if storage.get_setting("audio_enhance", "1") == "1":
+            audio.enhance_wav(wav)
         duration = audio.wav_duration(wav)
         storage.update(meeting_id, duration=duration)
 

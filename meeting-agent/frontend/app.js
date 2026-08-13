@@ -94,7 +94,7 @@ async function loadList() {
   if (!items.length) { el.innerHTML = `<p class="muted small" style="padding:8px">尚無會議。</p>`; return; }
   el.innerHTML = items.map((m) => `
     <div class="item ${m.id === currentMeetingId ? "active" : ""}" data-id="${m.id}">
-      <div class="t">${esc(m.title)}</div>
+      <div class="t">${esc(m.title)}${m.series ? ` <span class="series-tag">${esc(m.series)}</span>` : ""}</div>
       <div class="m"><span class="dot ${m.status}"></span>${esc(statusLabel(m.status))}
         ${m.duration ? " · " + fmtTime(m.duration) : ""} · ${new Date(m.created_at * 1000).toLocaleDateString()}</div>
     </div>`).join("");
@@ -332,6 +332,7 @@ async function uploadAudio(blob, filename) {
   }
   const opts = {
     title: $("optTitle").value.trim(),
+    series: $("optSeries").value.trim(),
     engine: $("optEngine").value,
     language: $("optLanguage").value,
     summary_language: $("optSummaryLang").value,
@@ -837,8 +838,13 @@ async function loadSettings() {
     const st = await api("/api/settings");
     $("confidential").checked = !!st.confidential_mode;
     $("retention").value = String(st.retention_days || 0);
+    $("audioEnhance").checked = st.audio_enhance !== false;
   } catch (e) { /* ignore */ }
 }
+$("audioEnhance").onchange = async () => {
+  await api("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ audio_enhance: $("audioEnhance").checked }) });
+};
 $("confidential").onchange = async () => {
   await api("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ confidential_mode: $("confidential").checked }) });

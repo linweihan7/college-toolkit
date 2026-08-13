@@ -66,6 +66,9 @@
           <label class="field"><span>標題</span>
             <input type="text" id="optTitle" placeholder="例如：每週產品同步會議" />
           </label>
+          <label class="field"><span>系列／專案 <span class="muted small">（選填）</span></span>
+            <input type="text" id="optSeries" placeholder="例如：票券AI小組" />
+          </label>
           <label class="field"><span>轉錄引擎</span>
             <select id="optEngine"></select>
           </label>
@@ -95,6 +98,7 @@
           </label>
           <button id="saveGlossary" type="button" class="ghost" style="font-size:12px;padding:5px 10px">💾 存為常用詞彙（每次自動帶入）</button>
           <hr style="border:none;border-top:1px solid var(--line);margin:16px 0" />
+          <label class="check"><input type="checkbox" id="audioEnhance" checked /> 🔊 音訊增強 <span class="muted small">（提升過小聲的錄音）</span></label>
           <label class="check"><input type="checkbox" id="confidential" /> 🔒 機密模式 <span class="muted small">（禁止任何雲端／AI，僅本機）</span></label>
           <label class="field"><span>自動刪除舊會議</span>
             <select id="retention">

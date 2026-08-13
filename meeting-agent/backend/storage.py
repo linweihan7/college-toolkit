@@ -114,10 +114,15 @@ def get(mid: str, include_result: bool = True) -> Optional[dict]:
 def list_meetings() -> List[dict]:
     with _conn() as c:
         rows = c.execute(
-            "SELECT id,title,created_at,status,stage,progress,engine,duration,error "
+            "SELECT id,title,created_at,status,stage,progress,engine,duration,error,options_json "
             "FROM meetings ORDER BY created_at DESC"
         ).fetchall()
-    return [dict(r) for r in rows]
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["series"] = (json.loads(d.pop("options_json") or "{}")).get("series", "")
+        out.append(d)
+    return out
 
 
 def apply_retention(days: int) -> int:

@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 class ProcessOptions(BaseModel):
     title: str = ""
+    series: str = ""   # optional grouping/tag, e.g. "每週產品同步"
     engine: Literal["local", "cloud"] = "local"
     # Default to Mandarin: forcing one language avoids the English hallucinations
     # that per-window auto-detection produces on Chinese meetings. "auto" only
