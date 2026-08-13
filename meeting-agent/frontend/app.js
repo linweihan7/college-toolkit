@@ -395,6 +395,10 @@ function renderMeeting(m) {
   $("mTitle").textContent = m.title;
   const r = m.result || {};
   SPEAKER_NAMES = r.speaker_names || {};
+  // AI proofreading needs an LLM key — make that visible rather than silently alerting.
+  const aiOk = !!firstAiProvider();
+  $("cleanupBtn").disabled = !aiOk;
+  $("cleanupBtn").title = aiOk ? "用 AI 修正整份逐字稿" : "需在 .env 設定 Claude／GPT／Gemini 金鑰（Gemini 免費）";
   const langName = { en: "English", zh: "中文", "": "—" }[r.language] || r.language;
   const badges = [
     new Date(m.created_at * 1000).toLocaleString(),
