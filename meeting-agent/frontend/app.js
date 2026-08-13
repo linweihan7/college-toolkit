@@ -53,9 +53,10 @@ async function loadCaps() {
   $("liveNote").textContent = live.available ? "（邊講邊出字）" : "（需本機引擎）";
 
   const ai = firstAiProvider();
-  $("aiClean").disabled = !ai || !live.available;
-  if (!ai) $("aiClean").checked = false;
-  $("aiCleanNote").textContent = ai ? "（AI 邊聽邊修正字幕）" : "（需 Claude／GPT／Gemini 金鑰，Gemini 免費）";
+  $("aiClean").disabled = !live.available;
+  $("aiCleanNote").textContent = ai
+    ? "（AI 邊聽邊修正字幕）"
+    : "（離線整理：去語助詞、補標點；設金鑰可用 AI）";
 
   // Summary AI providers (Claude / GPT / Gemini).
   const provs = CAPS.summarization.providers;
@@ -254,12 +255,12 @@ function startLive(stream) {
   $("liveBox").classList.remove("hidden");
   liveTimer = setInterval(flushLive, 3500);
 
-  // AI proofreading of the live captions, if a key is set and the toggle is on.
-  const prov = $("aiClean").checked ? firstAiProvider() : "";
-  aiCleanActive = !!prov;
+  // Proofreading of the live captions: LLM if a key is set, else offline tidy.
+  const prov = firstAiProvider();
+  aiCleanActive = $("aiClean").checked;
   if (aiCleanActive) {
     aiCleanBuf = []; aiCleanTail = "";
-    $("aiProvLabel").textContent = { claude: "Claude", openai: "GPT", gemini: "Gemini" }[prov] || prov;
+    $("aiProvLabel").textContent = { claude: "Claude", openai: "GPT", gemini: "Gemini" }[prov] || "離線整理";
     $("aiCaptions").innerHTML = "";
     $("aiBox").classList.remove("hidden");
     aiCleanTimer = setInterval(flushClean, 9000);   // batch a few captions for context
@@ -395,10 +396,13 @@ function renderMeeting(m) {
   $("mTitle").textContent = m.title;
   const r = m.result || {};
   SPEAKER_NAMES = r.speaker_names || {};
-  // AI proofreading needs an LLM key — make that visible rather than silently alerting.
+  // Proofreading always works: LLM when a key exists, otherwise offline tidy.
   const aiOk = !!firstAiProvider();
-  $("cleanupBtn").disabled = !aiOk;
-  $("cleanupBtn").title = aiOk ? "用 AI 修正整份逐字稿" : "需在 .env 設定 Claude／GPT／Gemini 金鑰（Gemini 免費）";
+  $("cleanupBtn").disabled = false;
+  $("cleanupBtn").textContent = aiOk ? "✨ AI 校對逐字稿" : "✨ 整理逐字稿（離線）";
+  $("cleanupBtn").title = aiOk
+    ? "用 AI 修正整份逐字稿（含同音字）"
+    : "離線整理：移除語助詞與重複、補標點（不需金鑰）";
   const langName = { en: "English", zh: "中文", "": "—" }[r.language] || r.language;
   const badges = [
     new Date(m.created_at * 1000).toLocaleString(),
@@ -532,7 +536,7 @@ function renderTranscript(segments) {
     return `<span class="spk spk-${speakers.indexOf(s.speaker) % 6}" data-raw="${esc(s.speaker)}" title="點擊重新命名">${esc(spName(s.speaker))}</span> `;
   };
   const toolbar = hasClean ? `<div class="tview">
-    <button data-v="clean" class="${transcriptView === "clean" ? "active" : ""}">AI 校對</button>
+    <button data-v="clean" class="${transcriptView === "clean" ? "active" : ""}">校對後</button>
     <button data-v="raw" class="${transcriptView === "raw" ? "active" : ""}">原始</button>
     <button data-v="compare" class="${transcriptView === "compare" ? "active" : ""}">對照</button>
   </div>` : "";
@@ -671,17 +675,16 @@ $("emailBtn").onclick = () => withResult((m, r) => {
   navigator.clipboard.writeText(L.join("\n")).then(() => flash($("emailBtn"), "✓ 已複製"));
 });
 $("cleanupBtn").onclick = async () => {
-  const prov = firstAiProvider();
-  if (!prov) { alert("AI 校對需要 Claude／GPT／Gemini 金鑰（Gemini 有免費額度），請在 .env 設定。"); return; }
+  const prov = firstAiProvider();          // "" -> server uses the offline tidy
   const btn = $("cleanupBtn"), orig = btn.textContent;
-  btn.disabled = true; btn.textContent = "AI 校對中…";
+  btn.disabled = true; btn.textContent = prov ? "AI 校對中…" : "整理中…";
   try {
     await api(`/api/meetings/${currentMeetingId}/cleanup?provider=${prov}`, { method: "POST" });
     const m = await api(`/api/meetings/${currentMeetingId}`);
     transcriptView = "clean";
     renderMeeting(m); switchTab("transcript");
   } catch (e) {
-    alert("AI 校對失敗：" + (e.detail || e.message || JSON.stringify(e)));
+    alert("校對失敗：" + (e.detail || e.message || JSON.stringify(e)));
   } finally {
     btn.disabled = false; btn.textContent = orig;
   }

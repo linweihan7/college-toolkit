@@ -56,25 +56,23 @@ async def transcribe_chunk(request: Request, sample_rate: int = 16000, language:
 
 @app.post("/api/clean")
 async def clean_live(payload: dict, provider: str = ""):
-    """Live AI proofreading: polish a short passage of rough captions."""
-    prov = config.resolve_ai_provider(provider)
-    if not prov:
-        raise HTTPException(400, "AI 校對需要 Claude / GPT / Gemini 金鑰（Gemini 有免費額度）")
+    """Live proofreading: LLM when a key is configured, else offline tidy."""
+    prov = config.resolve_ai_provider(provider)      # "" -> offline rule-based
     rough = (payload.get("text") or "").strip()
     if not rough:
-        return {"text": "", "provider": prov}
+        return {"text": "", "provider": prov or "offline"}
     try:
-        return {"text": clean.clean_text(rough, prov, payload.get("context", "")), "provider": prov}
+        return {"text": clean.clean_text(rough, prov, payload.get("context", "")),
+                "provider": prov or "offline"}
     except Exception as exc:  # noqa: BLE001 - never break the live stream; fall back to raw
-        return {"text": rough, "provider": prov, "error": str(exc)}
+        return {"text": rough, "provider": prov or "offline", "error": str(exc)}
 
 
 @app.post("/api/meetings/{mid}/cleanup")
 def cleanup_meeting(mid: str, provider: str = ""):
-    """AI-proofread the whole stored transcript (line-by-line, alignment kept)."""
-    prov = config.resolve_ai_provider(provider)
-    if not prov:
-        raise HTTPException(400, "AI 校對需要 Claude / GPT / Gemini 金鑰")
+    """Proofread the whole stored transcript (line-by-line, alignment kept).
+    Uses an LLM when a key is configured, otherwise the offline rule-based tidy."""
+    prov = config.resolve_ai_provider(provider)      # "" -> offline rule-based
     m = storage.get(mid)
     if not m or not (m.get("result") or {}).get("segments"):
         raise HTTPException(400, "No transcript to clean")
@@ -82,13 +80,14 @@ def cleanup_meeting(mid: str, provider: str = ""):
     segs = result["segments"]
     try:
         cleaned = clean.clean_lines([s["text"] for s in segs], prov)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(502, f"{prov} cleanup failed: {exc}")
+    except Exception as exc:  # noqa: BLE001 - fall back to the offline tidy
+        cleaned = clean.tidy_lines([s["text"] for s in segs])
+        prov = ""
     for s, c in zip(segs, cleaned):
-        s["clean"] = c            # keep the raw text; store the AI version alongside
-    result["cleaned_by"] = prov
+        s["clean"] = c            # keep the raw text; store the cleaned one alongside
+    result["cleaned_by"] = prov or "offline"
     storage.update(mid, result=result)
-    return {"ok": True, "provider": prov}
+    return {"ok": True, "provider": prov or "offline"}
 
 
 @app.post("/api/meetings")
