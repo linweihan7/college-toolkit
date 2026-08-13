@@ -493,7 +493,11 @@ function renderSummary(s) {
   const list = (arr, cls) => arr && arr.length ? `<ul class="${cls}">${arr.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
   const ai = s.action_items && s.action_items.length
     ? `<table class="ai"><thead><tr><th>事項</th><th>負責人</th><th>期限</th></tr></thead><tbody>${
-        s.action_items.map((a) => `<tr><td>${esc(a.task)}</td><td>${esc(a.owner)}</td><td>${esc(a.due)}</td></tr>`).join("")
+        s.action_items.map((a) => {
+          const task = (a.ts !== undefined && a.ts !== null)
+            ? `<span class="ailink" data-t="${a.ts}" title="跳到此處">${esc(a.task)}</span>` : esc(a.task);
+          return `<tr><td>${task}</td><td>${esc(a.owner)}</td><td>${esc(a.due)}</td></tr>`;
+        }).join("")
       }</tbody></table>` : "";
   const topics = s.topics && s.topics.length
     ? s.topics.map((t) => `<div class="topic"><h4>${esc(t.title)}</h4><p>${esc(t.summary)}</p></div>`).join("") : "";
@@ -506,6 +510,9 @@ function renderSummary(s) {
     block("行動項目", ai) +
     block("討論主題", topics);
   wireSummaryToolbar();
+  el.querySelectorAll(".ailink").forEach((n) => n.onclick = () => {
+    const p = $("player"); if (p) { p.currentTime = Number(n.dataset.t); p.play(); }
+  });
 }
 
 let transcriptView = "clean";   // clean | raw | compare (only when AI-cleaned)
@@ -641,6 +648,22 @@ $("copyBtn").onclick = () => withResult((m, r) => {
   const s = r.summary || {};
   const txt = [s.summary, "", "Highlights:", ...(s.highlights || []).map((h) => "• " + h)].join("\n");
   navigator.clipboard.writeText(txt).then(() => flash($("copyBtn"), "已複製！"));
+});
+$("exportDocx").onclick = () => {
+  const a = document.createElement("a");
+  a.href = `/api/meetings/${currentMeetingId}/minutes.docx`;
+  a.click();
+};
+$("emailBtn").onclick = () => withResult((m, r) => {
+  const s = r.summary || {};
+  SPEAKER_NAMES = r.speaker_names || {};
+  const L = [`主旨：${m.title} — 會議記錄`, "", new Date(m.created_at * 1000).toLocaleString(), ""];
+  if (s.summary) L.push(s.summary, "");
+  if ((s.highlights || []).length) L.push("重點：", ...s.highlights.map((h) => "• " + h), "");
+  if ((s.decisions || []).length) L.push("決議：", ...s.decisions.map((d) => "• " + d), "");
+  if ((s.action_items || []).length) L.push("行動項目：",
+    ...s.action_items.map((a) => `• ${a.task}${a.owner ? "（" + a.owner + "）" : ""}${a.due ? " — " + a.due : ""}`), "");
+  navigator.clipboard.writeText(L.join("\n")).then(() => flash($("emailBtn"), "✓ 已複製"));
 });
 $("cleanupBtn").onclick = async () => {
   const prov = firstAiProvider();
@@ -808,9 +831,28 @@ async function loadGlossary() {
   } catch (e) { /* ignore */ }
 }
 
+/* ---- Settings: confidential mode + retention ---- */
+async function loadSettings() {
+  try {
+    const st = await api("/api/settings");
+    $("confidential").checked = !!st.confidential_mode;
+    $("retention").value = String(st.retention_days || 0);
+  } catch (e) { /* ignore */ }
+}
+$("confidential").onchange = async () => {
+  await api("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ confidential_mode: $("confidential").checked }) });
+  await loadCaps();   // re-evaluate which engines/AI are allowed
+};
+$("retention").onchange = async () => {
+  await api("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ retention_days: Number($("retention").value) }) });
+};
+
 (async function init() {
   await loadCaps();
   await loadGlossary();
+  await loadSettings();
   await loadList();
   show("newView");
 })();

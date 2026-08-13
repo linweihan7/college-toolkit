@@ -94,6 +94,16 @@
             <textarea id="optVocab" rows="2" placeholder="Acme Corp、王經理、Kubernetes、Q3 OKRs"></textarea>
           </label>
           <button id="saveGlossary" type="button" class="ghost" style="font-size:12px;padding:5px 10px">💾 存為常用詞彙（每次自動帶入）</button>
+          <hr style="border:none;border-top:1px solid var(--line);margin:16px 0" />
+          <label class="check"><input type="checkbox" id="confidential" /> 🔒 機密模式 <span class="muted small">（禁止任何雲端／AI，僅本機）</span></label>
+          <label class="field"><span>自動刪除舊會議</span>
+            <select id="retention">
+              <option value="0">關閉（永久保留）</option>
+              <option value="30">30 天後刪除</option>
+              <option value="90">90 天後刪除</option>
+              <option value="365">1 年後刪除</option>
+            </select>
+          </label>
         </div>
       </div>
     </section>
@@ -117,8 +127,10 @@
         <div class="head-actions">
           <button id="cleanupBtn" class="ghost">✨ AI 校對逐字稿</button>
           <button id="retransBtn" class="ghost">↻ 重新轉錄（國語）</button>
+          <button id="exportDocx" class="ghost">⬇ Word</button>
           <button id="exportMd" class="ghost">⬇ 會議記錄 .md</button>
           <button id="exportTxt" class="ghost">⬇ 逐字稿 .txt</button>
+          <button id="emailBtn" class="ghost">✉ Email 草稿</button>
           <button id="copyBtn" class="ghost">⧉ 複製摘要</button>
           <button id="deleteBtn" class="ghost danger-text">🗑</button>
         </div>

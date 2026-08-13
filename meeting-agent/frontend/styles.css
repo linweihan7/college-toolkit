@@ -131,6 +131,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 table.ai { width: 100%; border-collapse: collapse; font-size: 13px; }
 table.ai th, table.ai td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
 table.ai th { color: var(--muted); font-weight: 600; font-size: 11.5px; text-transform: uppercase; }
+.ailink { cursor: pointer; border-bottom: 1px dashed var(--accent); }
+.ailink:hover { color: var(--accent); }
 .topic { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; }
 .topic h4 { margin: 0 0 6px; font-size: 14px; }
 .topic p { margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.55; }

@@ -89,8 +89,19 @@ def _has_module(name: str) -> bool:
         return False
 
 
+def _confidential() -> bool:
+    """Confidential mode: block everything that would send data off the machine."""
+    try:
+        from . import storage
+
+        return storage.get_setting("confidential_mode", "0") == "1"
+    except Exception:  # noqa: BLE001 - settings table may not exist yet
+        return False
+
+
 def capabilities() -> dict:
     """Report which engines/features are actually usable right now."""
+    conf = _confidential()
     local_ok = _has_module("faster_whisper")
     diar_pyannote = _has_module("pyannote.audio") and bool(HUGGINGFACE_TOKEN)
     diar_offline = _has_module("resemblyzer") and _has_module("sklearn")
@@ -104,9 +115,10 @@ def capabilities() -> dict:
                 "reason": None if local_ok else "faster-whisper not installed (see requirements-local.txt)",
             },
             "cloud": {
-                "available": bool(OPENAI_API_KEY) and _has_module("openai"),
+                "available": bool(OPENAI_API_KEY) and _has_module("openai") and not conf,
                 "model": OPENAI_TRANSCRIBE_MODEL,
-                "reason": None if (OPENAI_API_KEY and _has_module("openai")) else "OPENAI_API_KEY not set",
+                "reason": "機密模式（僅本機）" if conf
+                else (None if (OPENAI_API_KEY and _has_module("openai")) else "OPENAI_API_KEY not set"),
             },
         },
         "diarization": {
@@ -120,17 +132,17 @@ def capabilities() -> dict:
             "default": SUMMARY_PROVIDER,
             "providers": {
                 "claude": {
-                    "available": bool(ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN) and _has_module("anthropic"),
+                    "available": bool(ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN) and _has_module("anthropic") and not conf,
                     "model": CLAUDE_MODEL,
-                    "reason": None if (ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN) else "ANTHROPIC_API_KEY not set",
+                    "reason": "機密模式" if conf else (None if (ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN) else "ANTHROPIC_API_KEY not set"),
                 },
                 "openai": {
-                    "available": bool(OPENAI_API_KEY) and _has_module("openai"),
+                    "available": bool(OPENAI_API_KEY) and _has_module("openai") and not conf,
                     "model": OPENAI_SUMMARY_MODEL,
-                    "reason": None if OPENAI_API_KEY else "OPENAI_API_KEY not set",
+                    "reason": "機密模式" if conf else (None if OPENAI_API_KEY else "OPENAI_API_KEY not set"),
                 },
                 "gemini": {
-                    "available": bool(GEMINI_API_KEY) and _has_module("google.genai"),
+                    "available": bool(GEMINI_API_KEY) and _has_module("google.genai") and not conf,
                     "model": GEMINI_MODEL,
                     "reason": None
                     if (GEMINI_API_KEY and _has_module("google.genai"))
@@ -151,6 +163,7 @@ def capabilities() -> dict:
         "ffmpeg": shutil.which("ffmpeg") is not None,
         "default_engine": DEFAULT_ENGINE,
         "supported_languages": list(SUPPORTED_LANGUAGES),
+        "confidential": conf,
     }
 
 

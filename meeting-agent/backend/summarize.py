@@ -253,7 +253,7 @@ def _local_summary(segments: List[dict], summary_language: str) -> dict:
             if s["text"][:16] in seen_a:
                 continue
             seen_a.add(s["text"][:16])
-            action_items.append({"task": s["text"], "owner": s["speaker"] or "", "due": ""})
+            action_items.append({"task": s["text"], "owner": s["speaker"] or "", "due": "", "ts": s["start"]})
     action_items = action_items[:12]
 
     # Naive topic split: 2-3 equal chunks in chronological order.

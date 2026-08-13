@@ -120,6 +120,17 @@ def list_meetings() -> List[dict]:
     return [dict(r) for r in rows]
 
 
+def apply_retention(days: int) -> int:
+    """Delete meetings older than `days` (0 = keep forever)."""
+    if not days or days <= 0:
+        return 0
+    cutoff = time.time() - days * 86400
+    old = [r["id"] for r in list_meetings() if r["created_at"] < cutoff]
+    for mid in old:
+        delete(mid)
+    return len(old)
+
+
 def delete(mid: str) -> bool:
     row = get(mid)
     if not row:

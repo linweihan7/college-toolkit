@@ -21,6 +21,10 @@ app = FastAPI(title="Meeting Scribe")
 def _startup() -> None:
     storage.init()
     storage.reset_stale()
+    try:
+        storage.apply_retention(int(storage.get_setting("retention_days", "0") or 0))
+    except Exception:  # noqa: BLE001
+        pass
 
 
 @app.get("/api/config")
@@ -169,6 +173,39 @@ def resummarize(mid: str, provider: str = ""):
         title = summary["title"]
     storage.update(mid, result=result, title=title)
     return {"summary": summary, "provider": prov}
+
+
+@app.get("/api/settings")
+def get_settings():
+    return {
+        "confidential_mode": storage.get_setting("confidential_mode", "0") == "1",
+        "retention_days": int(storage.get_setting("retention_days", "0") or 0),
+    }
+
+
+@app.put("/api/settings")
+def put_settings(payload: dict):
+    if "confidential_mode" in payload:
+        storage.set_setting("confidential_mode", "1" if payload["confidential_mode"] else "0")
+    if "retention_days" in payload:
+        storage.set_setting("retention_days", str(int(payload.get("retention_days") or 0)))
+    return {"ok": True}
+
+
+@app.get("/api/meetings/{mid}/minutes.docx")
+def minutes_docx(mid: str):
+    m = storage.get(mid)
+    if not m or not m.get("result"):
+        raise HTTPException(404, "Not found")
+    from . import export_docx
+
+    out = config.DATA_DIR / f"{mid}.docx"
+    export_docx.build_docx(m, out)
+    safe = "".join(ch for ch in (m.get("title") or "meeting") if ch.isalnum() or ch in " 一-鿿").strip() or "meeting"
+    return FileResponse(
+        out, filename=f"{safe}.docx",
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
 
 
 @app.get("/api/search")

@@ -12,3 +12,5 @@ openai>=1.30
 google-genai>=0.3
 # Simplified -> Traditional Chinese conversion of recognized Mandarin.
 opencc-python-reimplemented>=0.1.7
+# Word (.docx) minutes export.
+python-docx>=1.1
