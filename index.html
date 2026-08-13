@@ -687,6 +687,7 @@
           <div class="card">
             <h1 class="page-title">Dashboard</h1>
             <p class="page-sub">Your college life at a glance.</p>
+            <button id="share-app-btn" class="field-full btn-secondary">🔗 Share this app</button>
           </div>
 
           <div class="stat-grid" id="dash-stats"></div>
@@ -4219,6 +4220,26 @@ Reply with ONLY this JSON, no prose: {"type": "...", "confidence": 0.0-1.0, "fie
 
       const panelKeys = { '1': 'dashboard', '2': 'expenses', '3': 'todo', '4': 'schedule', '5': 'gpa', '6': 'timer', '7': 'habits' };
       if (panelKeys[e.key]) showPanel(panelKeys[e.key]);
+    });
+  })();
+
+  /* ---------- Share ---------- */
+  (function () {
+    const btn = document.getElementById('share-app-btn');
+    if (!btn) return;
+    const url = 'https://linweihan7.github.io/college-toolkit/';
+    btn.addEventListener('click', async () => {
+      if (navigator.share) {
+        try { await navigator.share({ title: "Weihan's AI Tools", text: 'A free college toolkit — expenses, GPA, schedule, and more.', url }); return; }
+        catch (err) { if (err.name === 'AbortError') return; }
+      }
+      try {
+        await navigator.clipboard.writeText(url);
+        btn.textContent = '✓ Link copied';
+        setTimeout(() => { btn.textContent = '🔗 Share this app'; }, 1800);
+      } catch (err) {
+        prompt('Copy this link to share:', url);
+      }
     });
   })();
 
