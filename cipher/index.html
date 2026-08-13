@@ -53,7 +53,9 @@
     flex:1 1 auto; width:100%; display:flex; flex-direction:column;
     align-items:center; justify-content:center; gap:6px; min-height:0; padding:8px;
   }
-  #board{display:grid; grid-template-rows:repeat(6,1fr); gap:5px; height:100%; max-height:min(56vh,420px); aspect-ratio:5/6}
+  /* Size from whichever axis is tighter, so the grid never overflows a narrow
+     screen: 5/6 of the height budget, the width budget, or a sane maximum. */
+  #board{display:grid; grid-template-rows:repeat(6,1fr); gap:5px; aspect-ratio:5/6; width:min(92vw, 46vh, 340px)}
   .row{display:grid; grid-template-columns:repeat(5,1fr); gap:5px}
   .tile{
     display:flex; align-items:center; justify-content:center;
