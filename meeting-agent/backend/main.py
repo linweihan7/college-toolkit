@@ -17,6 +17,35 @@ FRONTEND = Path(__file__).resolve().parent.parent / "frontend"
 app = FastAPI(title="Meeting Scribe")
 
 
+@app.middleware("http")
+async def require_password(request: Request, call_next):
+    """HTTP Basic auth, active whenever APP_PASSWORD is set. Essential before
+    exposing this app past localhost — your meetings are otherwise readable by
+    anyone who reaches the URL."""
+    if not config.APP_PASSWORD:
+        return await call_next(request)
+
+    import base64
+    import secrets
+
+    header = request.headers.get("authorization", "")
+    ok = False
+    if header.startswith("Basic "):
+        try:
+            user, _, pw = base64.b64decode(header[6:]).decode("utf-8").partition(":")
+            ok = secrets.compare_digest(user, config.APP_USER) and secrets.compare_digest(
+                pw, config.APP_PASSWORD
+            )
+        except Exception:  # noqa: BLE001 - malformed header
+            ok = False
+    if not ok:
+        return JSONResponse(
+            {"detail": "需要登入"}, status_code=401,
+            headers={"WWW-Authenticate": 'Basic realm="Meeting Scribe"'},
+        )
+    return await call_next(request)
+
+
 @app.on_event("startup")
 def _startup() -> None:
     storage.init()

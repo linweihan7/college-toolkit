@@ -76,6 +76,13 @@ SUPPORTED_LANGUAGES = ("en", "zh")
 TRADITIONAL_CHINESE = _bool("TRADITIONAL_CHINESE", True)
 OPENCC_CONFIG = os.getenv("OPENCC_CONFIG", "s2t")
 
+# --- Serving / access control ------------------------------------------------
+# Set APP_PASSWORD to require a login. This is REQUIRED before exposing the app
+# beyond localhost — without it, anyone who reaches the URL can read every stored
+# meeting. APP_USER defaults to "admin".
+APP_USER = os.getenv("APP_USER", "admin")
+APP_PASSWORD = os.getenv("APP_PASSWORD", "")
+
 for _d in (DATA_DIR, AUDIO_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
