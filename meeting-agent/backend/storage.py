@@ -58,6 +58,11 @@ def _conn() -> sqlite3.Connection:
 def init() -> None:
     with _conn() as c:
         c.executescript(_SCHEMA)
+        # Migration: per-visitor ownership for public multi-user mode.
+        cols = {r["name"] for r in c.execute("PRAGMA table_info(meetings)")}
+        if "owner" not in cols:
+            c.execute("ALTER TABLE meetings ADD COLUMN owner TEXT DEFAULT ''")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_meetings_owner ON meetings(owner)")
 
 
 def reset_stale() -> None:
@@ -71,19 +76,29 @@ def reset_stale() -> None:
         )
 
 
-def create_meeting(title: str, engine: str, options: dict, audio_path: Path) -> str:
+def create_meeting(title: str, engine: str, options: dict, audio_path: Path, owner: str = "") -> str:
     mid = uuid.uuid4().hex[:12]
     with _conn() as c:
         c.execute(
             "INSERT INTO meetings (id,title,created_at,status,stage,progress,engine,"
-            "options_json,audio_path,duration,result_json,error) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "options_json,audio_path,duration,result_json,error,owner) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 mid, title or "未命名會議", time.time(), "queued", "排隊中", 0,
-                engine, json.dumps(options), str(audio_path), 0.0, None, None,
+                engine, json.dumps(options), str(audio_path), 0.0, None, None, owner,
             ),
         )
     return mid
+
+
+def count_recent(owner: str, seconds: int = 3600) -> int:
+    """How many meetings this visitor started recently (rate limiting)."""
+    with _conn() as c:
+        row = c.execute(
+            "SELECT COUNT(*) AS n FROM meetings WHERE owner=? AND created_at > ?",
+            (owner, time.time() - seconds),
+        ).fetchone()
+    return int(row["n"]) if row else 0
 
 
 def update(mid: str, **fields) -> None:
@@ -105,18 +120,25 @@ def _row_to_dict(row: sqlite3.Row, include_result: bool = True) -> dict:
     return d
 
 
-def get(mid: str, include_result: bool = True) -> Optional[dict]:
+def get(mid: str, include_result: bool = True, owner: Optional[str] = None) -> Optional[dict]:
+    """owner=None means no scoping (private single-user mode). In public mode the
+    caller passes the visitor's id so one visitor can never read another's."""
     with _conn() as c:
-        row = c.execute("SELECT * FROM meetings WHERE id=?", (mid,)).fetchone()
+        if owner is None:
+            row = c.execute("SELECT * FROM meetings WHERE id=?", (mid,)).fetchone()
+        else:
+            row = c.execute("SELECT * FROM meetings WHERE id=? AND owner=?", (mid, owner)).fetchone()
     return _row_to_dict(row, include_result) if row else None
 
 
-def list_meetings() -> List[dict]:
+def list_meetings(owner: Optional[str] = None) -> List[dict]:
+    cols = ("SELECT id,title,created_at,status,stage,progress,engine,duration,error,options_json "
+            "FROM meetings")
     with _conn() as c:
-        rows = c.execute(
-            "SELECT id,title,created_at,status,stage,progress,engine,duration,error,options_json "
-            "FROM meetings ORDER BY created_at DESC"
-        ).fetchall()
+        if owner is None:
+            rows = c.execute(cols + " ORDER BY created_at DESC").fetchall()
+        else:
+            rows = c.execute(cols + " WHERE owner=? ORDER BY created_at DESC", (owner,)).fetchall()
     out = []
     for r in rows:
         d = dict(r)
@@ -136,8 +158,8 @@ def apply_retention(days: int) -> int:
     return len(old)
 
 
-def delete(mid: str) -> bool:
-    row = get(mid)
+def delete(mid: str, owner: Optional[str] = None) -> bool:
+    row = get(mid, owner=owner)
     if not row:
         return False
     try:

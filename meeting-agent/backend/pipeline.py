@@ -36,6 +36,11 @@ def _run(meeting_id: str) -> None:
             audio.enhance_wav(wav)
         duration = audio.wav_duration(wav)
         storage.update(meeting_id, duration=duration)
+        if config.PUBLIC_MODE and duration > config.PUBLIC_MAX_MINUTES * 60:
+            raise RuntimeError(
+                f"錄音過長：公開版每場上限 {config.PUBLIC_MAX_MINUTES} 分鐘"
+                f"（此檔 {duration / 60:.0f} 分鐘）。"
+            )
 
         # Word timestamps are only needed for speaker diarization; skipping them
         # otherwise is markedly faster.

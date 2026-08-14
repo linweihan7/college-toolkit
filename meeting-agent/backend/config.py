@@ -83,6 +83,16 @@ OPENCC_CONFIG = os.getenv("OPENCC_CONFIG", "s2t")
 APP_USER = os.getenv("APP_USER", "admin")
 APP_PASSWORD = os.getenv("APP_PASSWORD", "")
 
+# --- Public multi-user mode --------------------------------------------------
+# When on: no password, every visitor gets their own private session and can only
+# ever see their own meetings. Run it with a SEPARATE MEETING_DATA_DIR so your
+# personal archive is physically absent from the public instance.
+PUBLIC_MODE = _bool("PUBLIC_MODE", False)
+# Abuse limits (public mode only) — transcription burns CPU on the host machine.
+PUBLIC_MAX_UPLOAD_MB = int(os.getenv("PUBLIC_MAX_UPLOAD_MB", "25"))
+PUBLIC_MAX_MINUTES = int(os.getenv("PUBLIC_MAX_MINUTES", "10"))
+PUBLIC_MAX_PER_HOUR = int(os.getenv("PUBLIC_MAX_PER_HOUR", "5"))
+
 for _d in (DATA_DIR, AUDIO_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
